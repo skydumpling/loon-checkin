@@ -11,7 +11,7 @@
 
 Loon:
 [Script]
-http-request ^https:\/\/www\.cncalc\.org\/ tag=cnCalc获取Cookie, script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/main/Tasks/cncalc.js
+http-request ^https:\/\/www\.cncalc\.org\/($|forum\.php|index\.php|member\.php|dsu_paulsign-sign\.html|plugin\.php\?id=dsu_paulsign:sign) tag=cnCalc获取Cookie, script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/main/Tasks/cncalc.js
 cron "0 9 * * *" script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/main/Tasks/cncalc.js, timeout=60, tag=cnCalc签到
 
 [MITM]
@@ -30,12 +30,13 @@ const CONFIG = {
   fallbackAction: "https://www.cncalc.org/plugin.php?id=dsu_paulsign:sign&operation=qiandao",
   mood: "kx",
   saying: "签到",
-  cookieCheck: /auth|saltkey|login/i,
+  cookieCheck: /(?:^|;\s*)[^=]*_auth=/i,
 };
 
 const $ = API(CONFIG.storage);
 const args = parseArguments(typeof $argument === "string" ? $argument : "");
-const cookie = $.read("COOKIE") || getNodeEnv(CONFIG.envCookie);
+const storedCookie = $.read("COOKIE");
+const cookie = CONFIG.cookieCheck.test(storedCookie) ? storedCookie : getNodeEnv(CONFIG.envCookie);
 const mood = args.mood || getNodeEnv("CNCALC_MOOD") || CONFIG.mood;
 const saying = args.saying || getNodeEnv("CNCALC_SAYING") || CONFIG.saying;
 
@@ -54,15 +55,34 @@ if ($.isRequest) {
 function getCookie() {
   const requestCookie = getHeader($request.headers, "Cookie");
   if (!requestCookie) {
-    $.notify(CONFIG.name, "", "当前请求没有 Cookie 请求头。");
+    notifyOnce("WARN_TIME", "当前请求没有 Cookie 请求头。");
+    $.done();
+    return;
+  }
+
+  const savedCookie = $.read("COOKIE");
+  if (requestCookie === savedCookie) {
+    $.done();
+    return;
+  }
+
+  const hasLoginToken = CONFIG.cookieCheck.test(requestCookie);
+  if (!hasLoginToken) {
+    notifyOnce("WARN_TIME", "未检测到登录 Cookie，请登录后刷新页面再获取。");
     $.done();
     return;
   }
 
   $.write(requestCookie, "COOKIE");
-  const hasLoginToken = CONFIG.cookieCheck.test(requestCookie);
-  $.notify(CONFIG.name, "", hasLoginToken ? "Cookie 获取成功，可以禁用获取 Cookie 脚本。" : "Cookie 已保存，但未识别到登录字段；如签到失败请重新登录后获取。");
+  notifyOnce("TIME", "Cookie 获取成功，可以禁用获取 Cookie 脚本。");
   $.done();
+}
+
+function notifyOnce(key, message, interval = 21600000) {
+  const last = Number($.read(key) || 0);
+  if (Date.now() - last < interval) return;
+  $.write(String(Date.now()), key);
+  $.notify(CONFIG.name, "", message);
 }
 
 async function sign() {
@@ -182,7 +202,8 @@ function extractFormFields(html) {
     if (!name) continue;
     const type = (getAttribute(attrs, "type") || "").toLowerCase();
     if (["button", "image", "reset", "submit"].includes(type)) continue;
-    if ((type === "checkbox" || type === "radio") && !/\bchecked\b/i.test(attrs)) continue;
+    if (type === "checkbox" && !/\bchecked\b/i.test(attrs)) continue;
+    if (type === "radio" && !/\bchecked\b/i.test(attrs) && Object.prototype.hasOwnProperty.call(fields, name)) continue;
     fields[name] = getAttribute(attrs, "value") || "";
   }
 

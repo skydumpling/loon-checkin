@@ -22,6 +22,8 @@ https://raw.githubusercontent.com/skydumpling/loon-checkin/main/loon/checkin.con
    - `https://uiwow.com/`
 4. 收到 Cookie 获取成功通知后，禁用 3 条“获取 Cookie”脚本，只保留 3 条 cron 签到脚本。
 
+获取 Cookie 脚本只保存带 `_auth=` 的登录 Cookie；未登录的游客 Cookie 不会保存。重复刷新同一页面不会反复通知。
+
 订阅里的 6 条脚本组件都带有 `tag` 和 `enable=true`，在 Loon 脚本订阅详情页应能分别手动开关：
 
 - `PCBeta获取Cookie`
@@ -31,7 +33,7 @@ https://raw.githubusercontent.com/skydumpling/loon-checkin/main/loon/checkin.con
 - `cnCalc签到`
 - `UIWOW签到`
 
-cnCalc 和 UIWOW 使用 `dsu_paulsign`，默认提交：
+cnCalc 使用 `dsu_paulsign`，UIWOW 使用 `dc_signin`。两个脚本默认提交：
 
 - `mood=kx`
 - `saying=签到`

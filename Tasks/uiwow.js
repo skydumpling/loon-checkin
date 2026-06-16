@@ -1,17 +1,17 @@
 /******************************************
  * @name UIWOW 签到
- * @description UIWOW dsu_paulsign 自动签到，支持 Quantumult X / Surge / Loon / Node.js
+ * @description UIWOW dc_signin 自动签到，支持 Quantumult X / Surge / Loon / Node.js
  * @version 2.0.0
  ******************************************
 使用说明:
 1. Loon/Surge/QX 中先启用“UIWOW 获取 Cookie”，手机登录并打开 https://uiwow.com/
 2. 收到 Cookie 获取成功后，可以禁用“UIWOW 获取 Cookie”，只保留 cron 签到任务。
 3. Node.js 调试可设置环境变量 UIWOW_COOKIE。
-4. 默认心情 qdxq=kx，默认输入 todaysay=签到。
+4. 默认心情 mood=kx，默认输入 saying=签到。
 
 Loon:
 [Script]
-http-request ^https:\/\/(www\.)?uiwow\.com\/ tag=UIWOW获取Cookie, script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/main/Tasks/uiwow.js
+http-request ^https:\/\/(www\.)?uiwow\.com\/($|forum\.php|index\.php|member\.php|plugin\.php\?id=dc_signin:dc_signin) tag=UIWOW获取Cookie, script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/main/Tasks/uiwow.js
 cron "0 9 * * *" script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/main/Tasks/uiwow.js, timeout=60, tag=UIWOW签到
 
 [MITM]
@@ -24,18 +24,19 @@ const CONFIG = {
   envCookie: "UIWOW_COOKIE",
   baseUrl: "https://uiwow.com/",
   signUrls: [
-    "https://uiwow.com/plugin.php?id=dsu_paulsign:sign",
-    "https://uiwow.com/dsu_paulsign-sign.html",
+    "https://uiwow.com/plugin.php?id=dc_signin:dc_signin",
+    "https://uiwow.com/",
   ],
-  postPath: "/plugin.php?id=dsu_paulsign:sign&operation=qiandao&infloat=1&inajax=1",
+  fallbackAction: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin",
   mood: "kx",
   saying: "签到",
-  cookieCheck: /auth|saltkey|login|session/i,
+  cookieCheck: /(?:^|;\s*)[^=]*_auth=/i,
 };
 
 const $ = API(CONFIG.storage);
 const args = parseArguments(typeof $argument === "string" ? $argument : "");
-const cookie = $.read("COOKIE") || getNodeEnv(CONFIG.envCookie);
+const storedCookie = $.read("COOKIE");
+const cookie = CONFIG.cookieCheck.test(storedCookie) ? storedCookie : getNodeEnv(CONFIG.envCookie);
 const mood = args.mood || getNodeEnv("UIWOW_MOOD") || CONFIG.mood;
 const saying = args.saying || getNodeEnv("UIWOW_SAYING") || CONFIG.saying;
 
@@ -54,20 +55,38 @@ if ($.isRequest) {
 function getCookie() {
   const requestCookie = getHeader($request.headers, "Cookie");
   if (!requestCookie) {
-    $.notify(CONFIG.name, "", "当前请求没有 Cookie 请求头。");
+    notifyOnce("WARN_TIME", "当前请求没有 Cookie 请求头。");
+    $.done();
+    return;
+  }
+
+  const savedCookie = $.read("COOKIE");
+  if (requestCookie === savedCookie) {
+    $.done();
+    return;
+  }
+
+  const hasLoginToken = CONFIG.cookieCheck.test(requestCookie);
+  if (!hasLoginToken) {
+    notifyOnce("WARN_TIME", "未检测到登录 Cookie，请登录后刷新页面再获取。");
     $.done();
     return;
   }
 
   $.write(requestCookie, "COOKIE");
-  const hasLoginToken = CONFIG.cookieCheck.test(requestCookie);
-  $.notify(CONFIG.name, "", hasLoginToken ? "Cookie 获取成功，可以禁用获取 Cookie 脚本。" : "Cookie 已保存，但未识别到登录字段；如签到失败请重新登录后获取。");
+  notifyOnce("TIME", "Cookie 获取成功，可以禁用获取 Cookie 脚本。");
   $.done();
 }
 
+function notifyOnce(key, message, interval = 21600000) {
+  const last = Number($.read(key) || 0);
+  if (Date.now() - last < interval) return;
+  $.write(String(Date.now()), key);
+  $.notify(CONFIG.name, "", message);
+}
+
 async function sign() {
-  const signUrl = args.signUrl || getNodeEnv("UIWOW_SIGN_URL") || await detectSignUrl();
-  const signPage = await requestText("GET", signUrl, null, headers(CONFIG.baseUrl));
+  const signPage = await getSignPage(args.signUrl || getNodeEnv("UIWOW_SIGN_URL"));
   assertOk(signPage, "打开签到页失败");
   assertLoggedIn(signPage.body);
 
@@ -80,16 +99,14 @@ async function sign() {
     throw new Error("未找到 formhash，可能 Cookie 无效、页面结构变化，或需要设置 signUrl 参数。");
   }
 
-  const postUrl = new URL(CONFIG.postPath, CONFIG.baseUrl).href;
-  const body = toFormBody({
-    formhash,
-    qdxq: mood,
-    qdmode: "1",
-    todaysay: saying,
-    fastreply: "0",
-  });
-  const response = await requestText("POST", postUrl, body, {
-    ...headers(signUrl),
+  const form = extractSignForm(signPage.body, signPage.url);
+  const fields = prepareSignFields(form.fields, formhash);
+  const actionUrl = form.action || CONFIG.fallbackAction;
+  const method = form.method || "POST";
+  const response = method === "GET"
+    ? await requestText("GET", appendQuery(actionUrl, fields), null, headers(signPage.url))
+    : await requestText("POST", actionUrl, toFormBody(fields), {
+    ...headers(signPage.url),
     Origin: new URL(CONFIG.baseUrl).origin,
     "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
     "X-Requested-With": "XMLHttpRequest",
@@ -100,18 +117,22 @@ async function sign() {
   return extractMessage(response.body) || stripHtml(response.body).slice(0, 160) || "签到请求已提交。";
 }
 
-async function detectSignUrl() {
-  for (const signUrl of CONFIG.signUrls) {
+async function getSignPage(overrideUrl) {
+  const urls = overrideUrl ? [overrideUrl] : CONFIG.signUrls;
+  let lastError;
+  for (const signUrl of urls) {
     try {
       const response = await requestText("GET", signUrl, null, headers(CONFIG.baseUrl));
-      if (response.statusCode >= 200 && response.statusCode < 400 && /dsu_paulsign|qdxq|签到|qiandao/i.test(response.body)) {
-        return signUrl;
+      if (response.statusCode >= 200 && response.statusCode < 400) {
+        return response;
       }
+      lastError = new Error(`HTTP ${response.statusCode}`);
     } catch (error) {
+      lastError = error;
       console.log(`${CONFIG.name} 探测 ${signUrl} 失败: ${error.message || error}`);
     }
   }
-  return CONFIG.signUrls[0];
+  throw lastError || new Error("无法打开签到页。");
 }
 
 function headers(referer) {
@@ -144,6 +165,81 @@ function requestText(method, url, body, requestHeaders) {
     body: response.body || "",
     url,
   }));
+}
+
+function extractSignForm(html, baseUrl) {
+  const fallback = { action: CONFIG.fallbackAction, method: "POST", fields: {} };
+  const pattern = /<form\b([^>]*)>([\s\S]*?)<\/form>/gi;
+  let match;
+  while ((match = pattern.exec(html))) {
+    const attrs = match[1] || "";
+    const body = match[2] || "";
+    const actionRaw = getAttribute(attrs, "action");
+    const action = actionRaw ? new URL(decodeHtml(actionRaw), baseUrl).href : "";
+    const text = `${attrs}\n${body}\n${action}`;
+    if (!/dc_signin|signin|签到|mood|say|content|message/i.test(text)) continue;
+    return {
+      action: action || fallback.action,
+      method: (getAttribute(attrs, "method") || "POST").toUpperCase(),
+      fields: extractFormFields(body),
+    };
+  }
+  return fallback;
+}
+
+function extractFormFields(html) {
+  const fields = {};
+  const inputPattern = /<input\b([^>]*)>/gi;
+  let match;
+  while ((match = inputPattern.exec(html))) {
+    const attrs = match[1] || "";
+    const name = getAttribute(attrs, "name");
+    if (!name) continue;
+    const type = (getAttribute(attrs, "type") || "").toLowerCase();
+    if (["button", "image", "reset", "submit"].includes(type)) continue;
+    if (type === "checkbox" && !/\bchecked\b/i.test(attrs)) continue;
+    if (type === "radio" && !/\bchecked\b/i.test(attrs) && Object.prototype.hasOwnProperty.call(fields, name)) continue;
+    fields[name] = getAttribute(attrs, "value") || "";
+  }
+
+  const textareaPattern = /<textarea\b([^>]*)>([\s\S]*?)<\/textarea>/gi;
+  while ((match = textareaPattern.exec(html))) {
+    const name = getAttribute(match[1] || "", "name");
+    if (name) fields[name] = stripHtml(match[2] || "");
+  }
+  return fields;
+}
+
+function prepareSignFields(fields, formhash) {
+  const result = { ...fields, formhash: fields.formhash || formhash };
+  const moodKeys = ["qdxq", "mood", "emotion", "feeling", "type"];
+  const sayingKeys = ["todaysay", "saying", "message", "content", "say", "signmsg"];
+  setFirstExisting(result, moodKeys, mood, "qdxq");
+  setFirstExisting(result, sayingKeys, saying, "todaysay");
+  return result;
+}
+
+function setFirstExisting(target, keys, value, fallbackKey) {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(target, key)) {
+      target[key] = value;
+      return;
+    }
+  }
+  target[fallbackKey] = value;
+}
+
+function getAttribute(attrs, name) {
+  const pattern = new RegExp(`\\b${name}\\s*=\\s*(["'])(.*?)\\1`, "i");
+  return decodeHtml(attrs.match(pattern)?.[2] || "");
+}
+
+function appendQuery(url, data) {
+  const target = new URL(url, CONFIG.baseUrl);
+  for (const key of Object.keys(data)) {
+    target.searchParams.set(key, data[key]);
+  }
+  return target.href;
 }
 
 function extractFormHash(html) {

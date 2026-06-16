@@ -22,11 +22,12 @@ const CONFIG = {
   storage: "PCBETA_CHECKIN",
   envCookie: "PCBETA_COOKIE",
   taskUrl: "https://i.pcbeta.com/home.php?mod=task",
-  cookieCheck: /auth|saltkey|login/i,
+  cookieCheck: /(?:^|;\s*)[^=]*_auth=/i,
 };
 
 const $ = API(CONFIG.storage);
-const cookie = $.read("COOKIE") || getNodeEnv(CONFIG.envCookie);
+const storedCookie = $.read("COOKIE");
+const cookie = CONFIG.cookieCheck.test(storedCookie) ? storedCookie : getNodeEnv(CONFIG.envCookie);
 
 if ($.isRequest) {
   getCookie();
@@ -43,15 +44,34 @@ if ($.isRequest) {
 function getCookie() {
   const requestCookie = getHeader($request.headers, "Cookie");
   if (!requestCookie) {
-    $.notify(CONFIG.name, "", "当前请求没有 Cookie 请求头。");
+    notifyOnce("WARN_TIME", "当前请求没有 Cookie 请求头。");
+    $.done();
+    return;
+  }
+
+  const savedCookie = $.read("COOKIE");
+  if (requestCookie === savedCookie) {
+    $.done();
+    return;
+  }
+
+  const hasLoginToken = CONFIG.cookieCheck.test(requestCookie);
+  if (!hasLoginToken) {
+    notifyOnce("WARN_TIME", "未检测到登录 Cookie，请登录后刷新页面再获取。");
     $.done();
     return;
   }
 
   $.write(requestCookie, "COOKIE");
-  const hasLoginToken = CONFIG.cookieCheck.test(requestCookie);
-  $.notify(CONFIG.name, "", hasLoginToken ? "Cookie 获取成功，可以禁用获取 Cookie 脚本。" : "Cookie 已保存，但未识别到登录字段；如签到失败请重新登录后获取。");
+  notifyOnce("TIME", "Cookie 获取成功，可以禁用获取 Cookie 脚本。");
   $.done();
+}
+
+function notifyOnce(key, message, interval = 21600000) {
+  const last = Number($.read(key) || 0);
+  if (Date.now() - last < interval) return;
+  $.write(String(Date.now()), key);
+  $.notify(CONFIG.name, "", message);
 }
 
 async function sign() {
