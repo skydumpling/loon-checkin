@@ -20,9 +20,11 @@ https://raw.githubusercontent.com/skydumpling/loon-checkin/main/loon/checkin.con
    - `https://i.pcbeta.com/home.php?mod=task`
    - `https://www.cncalc.org/dsu_paulsign-sign.html`
    - `https://uiwow.com/`
-4. 收到 Cookie 获取成功通知后，禁用 3 条“获取 Cookie”脚本，只保留 3 条 cron 签到脚本。
+4. 登录并刷新对应页面后，禁用 3 条“获取 Cookie”脚本，只保留 3 条 cron 签到脚本。
 
-获取 Cookie 脚本只保存带 `_auth=` 的登录 Cookie；未登录的游客 Cookie 不会保存。重复刷新同一页面不会反复通知。
+获取 Cookie 脚本是静默的，只保存带 `_auth=` 的登录 Cookie；未登录的游客 Cookie 不会保存，也不会弹通知。是否获取成功，用手动运行对应签到脚本验证。
+
+当天已经签到时，可以手动运行对应签到脚本验证 Cookie 和“已签到/已完成”判断；真正的首次签到成功只能等第二天未签到状态再验证。
 
 订阅里的 6 条脚本组件都带有 `tag` 和 `enable=true`，在 Loon 脚本订阅详情页应能分别手动开关：
 

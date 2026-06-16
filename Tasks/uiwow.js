@@ -5,7 +5,7 @@
  ******************************************
 使用说明:
 1. Loon/Surge/QX 中先启用“UIWOW 获取 Cookie”，手机登录并打开 https://uiwow.com/
-2. 收到 Cookie 获取成功后，可以禁用“UIWOW 获取 Cookie”，只保留 cron 签到任务。
+2. Cookie 获取脚本静默保存登录 Cookie；登录后刷新过首页即可禁用获取 Cookie 脚本。
 3. Node.js 调试可设置环境变量 UIWOW_COOKIE。
 4. 默认心情 mood=kx，默认输入 saying=签到。
 
@@ -55,7 +55,6 @@ if ($.isRequest) {
 function getCookie() {
   const requestCookie = getHeader($request.headers, "Cookie");
   if (!requestCookie) {
-    notifyOnce("WARN_TIME", "当前请求没有 Cookie 请求头。");
     $.done();
     return;
   }
@@ -68,21 +67,12 @@ function getCookie() {
 
   const hasLoginToken = CONFIG.cookieCheck.test(requestCookie);
   if (!hasLoginToken) {
-    notifyOnce("WARN_TIME", "未检测到登录 Cookie，请登录后刷新页面再获取。");
     $.done();
     return;
   }
 
   $.write(requestCookie, "COOKIE");
-  notifyOnce("TIME", "Cookie 获取成功，可以禁用获取 Cookie 脚本。");
   $.done();
-}
-
-function notifyOnce(key, message, interval = 21600000) {
-  const last = Number($.read(key) || 0);
-  if (Date.now() - last < interval) return;
-  $.write(String(Date.now()), key);
-  $.notify(CONFIG.name, "", message);
 }
 
 async function sign() {
