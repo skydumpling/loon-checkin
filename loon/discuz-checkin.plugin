@@ -1,0 +1,22 @@
+#!name=Discuz 每日签到
+#!desc=PCBeta / cnCalc / UIWOW Cookie 获取与自动签到
+#!author=skydumpling
+#!homepage=https://github.com/skydumpling/loon-checkin
+
+[MITM]
+hostname = %APPEND% i.pcbeta.com, bbs.pcbeta.com, www.cncalc.org, cncalc.org, uiwow.com, www.uiwow.com
+
+[Script]
+# 抓 Cookie：手机登录后，打开对应页面触发一次即可。
+http-request ^https?:\/\/(i|bbs)\.pcbeta\.com\/.* script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/refs/heads/main/loon/discuz-checkin.js, requires-body=false, timeout=20, tag=PCBeta获取Cookie, argument=site=pcbeta
+http-request ^https?:\/\/(www\.)?cncalc\.org\/.* script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/refs/heads/main/loon/discuz-checkin.js, requires-body=false, timeout=20, tag=cnCalc获取Cookie, argument=site=cncalc
+http-request ^https?:\/\/(www\.)?uiwow\.com\/.* script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/refs/heads/main/loon/discuz-checkin.js, requires-body=false, timeout=20, tag=UIWOW获取Cookie, argument=site=uiwow
+
+# 每天 09:00 自动签到。
+cron "0 9 * * *" script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/refs/heads/main/loon/discuz-checkin.js, timeout=60, tag=PCBeta签到, argument=site=pcbeta
+cron "0 9 * * *" script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/refs/heads/main/loon/discuz-checkin.js, timeout=60, tag=cnCalc签到, argument=site=cncalc&mood=kx&saying=%E7%AD%BE%E5%88%B0
+cron "0 9 * * *" script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/refs/heads/main/loon/discuz-checkin.js, timeout=60, tag=UIWOW签到, argument=site=uiwow&mood=kx&saying=%E7%AD%BE%E5%88%B0
+
+# 如果 UIWOW 自动探测失败，可把抓包得到的签到页面或任务页 URL 填到参数里：
+# cron "0 9 * * *" script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/refs/heads/main/loon/discuz-checkin.js, timeout=60, tag=UIWOW签到, argument=site=uiwow&mood=kx&saying=%E7%AD%BE%E5%88%B0&signUrl=https%3A%2F%2Fuiwow.com%2Fplugin.php%3Fid%3Ddsu_paulsign%3Asign
+# cron "0 9 * * *" script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/refs/heads/main/loon/discuz-checkin.js, timeout=60, tag=UIWOW签到, argument=site=uiwow&mood=kx&saying=%E7%AD%BE%E5%88%B0&taskUrl=https%3A%2F%2Fuiwow.com%2Fhome.php%3Fmod%3Dtask

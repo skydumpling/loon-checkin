@@ -5,6 +5,14 @@
 - `http-request` 模式：手机登录网站并打开页面，脚本自动保存 Cookie。
 - `cron` 模式：每天定时读取已保存 Cookie 并签到。
 
+如果在 Loon 里用“插件/订阅”方式添加，请添加 plugin 文件，而不是 `.js` 文件：
+
+```text
+https://raw.githubusercontent.com/skydumpling/loon-checkin/refs/heads/main/loon/discuz-checkin.plugin
+```
+
+`.js` 链接只适合作为 `script-path` 被插件或手写配置引用。
+
 cnCalc 和 UIWOW 使用 Discuz `dsu_paulsign` 签到时会提交心情与一句话：
 
 - `mood=kx`：心情选“开心”。
