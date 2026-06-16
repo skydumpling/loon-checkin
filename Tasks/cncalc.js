@@ -4,15 +4,15 @@
  * @version 2.0.0
  ******************************************
 使用说明:
-1. Loon/Surge/QX 中先启用“cnCalc 获取 Cookie”，手机登录并打开 https://www.cncalc.org/dsu_paulsign-sign.html
+1. Loon/Surge/QX 中先启用“cnCalc 获取 Cookie”，手机登录并打开 https://www.cncalc.org/
 2. 收到 Cookie 获取成功后，可以禁用“cnCalc 获取 Cookie”，只保留 cron 签到任务。
 3. Node.js 调试可设置环境变量 CNCALC_COOKIE。
 4. 默认心情 qdxq=kx，默认输入 todaysay=签到。
 
 Loon:
 [Script]
-http-request ^https:\/\/www\.cncalc\.org\/(dsu_paulsign-sign\.html|plugin\.php\?id=dsu_paulsign:sign) tag=cnCalc获取Cookie, script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/refs/heads/main/Tasks/cncalc.js
-cron "0 9 * * *" script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/refs/heads/main/Tasks/cncalc.js, timeout=60, tag=cnCalc签到
+http-request ^https:\/\/www\.cncalc\.org\/ tag=cnCalc获取Cookie, script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/main/Tasks/cncalc.js
+cron "0 9 * * *" script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/main/Tasks/cncalc.js, timeout=60, tag=cnCalc签到
 
 [MITM]
 hostname = %APPEND% www.cncalc.org
@@ -23,8 +23,11 @@ const CONFIG = {
   storage: "CNCALC_CHECKIN",
   envCookie: "CNCALC_COOKIE",
   baseUrl: "https://www.cncalc.org/",
-  signUrl: "https://www.cncalc.org/dsu_paulsign-sign.html",
-  postPath: "/plugin.php?id=dsu_paulsign:sign&operation=qiandao&infloat=1&inajax=1",
+  signUrls: [
+    "https://www.cncalc.org/dsu_paulsign-sign.html",
+    "https://www.cncalc.org/plugin.php?id=dsu_paulsign:sign",
+  ],
+  fallbackAction: "https://www.cncalc.org/plugin.php?id=dsu_paulsign:sign&operation=qiandao",
   mood: "kx",
   saying: "签到",
   cookieCheck: /auth|saltkey|login/i,
@@ -63,7 +66,7 @@ function getCookie() {
 }
 
 async function sign() {
-  const signPage = await requestText("GET", CONFIG.signUrl, null, headers(CONFIG.baseUrl));
+  const signPage = await getSignPage();
   assertOk(signPage, "打开签到页失败");
   assertLoggedIn(signPage.body);
 
@@ -76,16 +79,21 @@ async function sign() {
     throw new Error("未找到 formhash，可能 Cookie 无效或页面结构变化。");
   }
 
-  const postUrl = new URL(CONFIG.postPath, CONFIG.baseUrl).href;
-  const body = toFormBody({
-    formhash,
+  const form = extractSignForm(signPage.body, signPage.url);
+  const fields = {
+    ...form.fields,
+    formhash: form.fields.formhash || formhash,
     qdxq: mood,
-    qdmode: "1",
+    qdmode: form.fields.qdmode || "1",
     todaysay: saying,
-    fastreply: "0",
-  });
-  const response = await requestText("POST", postUrl, body, {
-    ...headers(CONFIG.signUrl),
+    fastreply: form.fields.fastreply || "0",
+  };
+  const actionUrl = form.action || CONFIG.fallbackAction;
+  const method = form.method || "POST";
+  const response = method === "GET"
+    ? await requestText("GET", appendQuery(actionUrl, fields), null, headers(signPage.url))
+    : await requestText("POST", actionUrl, toFormBody(fields), {
+    ...headers(signPage.url),
     Origin: new URL(CONFIG.baseUrl).origin,
     "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
     "X-Requested-With": "XMLHttpRequest",
@@ -94,6 +102,22 @@ async function sign() {
   assertLoggedIn(response.body);
 
   return extractMessage(response.body) || stripHtml(response.body).slice(0, 160) || "签到请求已提交。";
+}
+
+async function getSignPage() {
+  let lastError;
+  for (const url of CONFIG.signUrls) {
+    try {
+      const response = await requestText("GET", url, null, headers(CONFIG.baseUrl));
+      if (response.statusCode >= 200 && response.statusCode < 400) {
+        return response;
+      }
+      lastError = new Error(`HTTP ${response.statusCode}`);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("无法打开签到页。");
 }
 
 function headers(referer) {
@@ -126,6 +150,61 @@ function requestText(method, url, body, requestHeaders) {
     body: response.body || "",
     url,
   }));
+}
+
+function extractSignForm(html, baseUrl) {
+  const fallback = { action: CONFIG.fallbackAction, method: "POST", fields: {} };
+  const pattern = /<form\b([^>]*)>([\s\S]*?)<\/form>/gi;
+  let match;
+  while ((match = pattern.exec(html))) {
+    const attrs = match[1] || "";
+    const body = match[2] || "";
+    const actionRaw = getAttribute(attrs, "action");
+    const action = actionRaw ? new URL(decodeHtml(actionRaw), baseUrl).href : "";
+    const text = `${attrs}\n${body}\n${action}`;
+    if (!/dsu_paulsign|qiandao|qdxq|todaysay/i.test(text)) continue;
+    return {
+      action: action || fallback.action,
+      method: (getAttribute(attrs, "method") || "POST").toUpperCase(),
+      fields: extractFormFields(body),
+    };
+  }
+  return fallback;
+}
+
+function extractFormFields(html) {
+  const fields = {};
+  const inputPattern = /<input\b([^>]*)>/gi;
+  let match;
+  while ((match = inputPattern.exec(html))) {
+    const attrs = match[1] || "";
+    const name = getAttribute(attrs, "name");
+    if (!name) continue;
+    const type = (getAttribute(attrs, "type") || "").toLowerCase();
+    if (["button", "image", "reset", "submit"].includes(type)) continue;
+    if ((type === "checkbox" || type === "radio") && !/\bchecked\b/i.test(attrs)) continue;
+    fields[name] = getAttribute(attrs, "value") || "";
+  }
+
+  const textareaPattern = /<textarea\b([^>]*)>([\s\S]*?)<\/textarea>/gi;
+  while ((match = textareaPattern.exec(html))) {
+    const name = getAttribute(match[1] || "", "name");
+    if (name) fields[name] = stripHtml(match[2] || "");
+  }
+  return fields;
+}
+
+function getAttribute(attrs, name) {
+  const pattern = new RegExp(`\\b${name}\\s*=\\s*(["'])(.*?)\\1`, "i");
+  return decodeHtml(attrs.match(pattern)?.[2] || "");
+}
+
+function appendQuery(url, data) {
+  const target = new URL(url, CONFIG.baseUrl);
+  for (const key of Object.keys(data)) {
+    target.searchParams.set(key, data[key]);
+  }
+  return target.href;
 }
 
 function extractFormHash(html) {

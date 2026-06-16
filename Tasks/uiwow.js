@@ -11,8 +11,8 @@
 
 Loon:
 [Script]
-http-request ^https:\/\/(www\.)?uiwow\.com\/ tag=UIWOW获取Cookie, script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/refs/heads/main/Tasks/uiwow.js
-cron "0 9 * * *" script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/refs/heads/main/Tasks/uiwow.js, timeout=60, tag=UIWOW签到
+http-request ^https:\/\/(www\.)?uiwow\.com\/ tag=UIWOW获取Cookie, script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/main/Tasks/uiwow.js
+cron "0 9 * * *" script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/main/Tasks/uiwow.js, timeout=60, tag=UIWOW签到
 
 [MITM]
 hostname = %APPEND% uiwow.com, www.uiwow.com
