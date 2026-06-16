@@ -5,6 +5,13 @@
 - `http-request` 模式：手机登录网站并打开页面，脚本自动保存 Cookie。
 - `cron` 模式：每天定时读取已保存 Cookie 并签到。
 
+cnCalc 和 UIWOW 使用 Discuz `dsu_paulsign` 签到时会提交心情与一句话：
+
+- `mood=kx`：心情选“开心”。
+- `saying=签到`：输入内容为“签到”。
+
+如果你想改内容，把 Loon 配置里的 `saying=%E7%AD%BE%E5%88%B0` 换成 URL encode 后的文字即可。
+
 ## 配置
 
 1. 把 `loon/discuz-checkin.js` 放到你自己的 GitHub 仓库。
