@@ -29,7 +29,7 @@ const storedCookie = $.read("COOKIE");
 const cookie = CONFIG.cookieCheck.test(storedCookie) ? storedCookie : getNodeEnv(CONFIG.envCookie);
 
 if ($.isRequest) {
-  getCookie();
+  $.done();
 } else if (!cookie) {
   $.notify(CONFIG.name, "", "未获取 Cookie，请先启用获取 Cookie 脚本并登录访问任务页。");
   $.done();

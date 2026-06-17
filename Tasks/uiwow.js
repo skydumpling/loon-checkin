@@ -41,8 +41,7 @@ const mood = args.mood || getNodeEnv("UIWOW_MOOD") || CONFIG.mood;
 const saying = args.saying || getNodeEnv("UIWOW_SAYING") || CONFIG.saying;
 
 if ($.isRequest) {
-  if (args.debug === "1") captureSignRequest();
-  else getCookie();
+  $.done();
 } else if (!cookie) {
   $.notify(CONFIG.name, "", "未获取 Cookie，请先启用获取 Cookie 脚本并登录访问 UIWOW。");
   $.done();

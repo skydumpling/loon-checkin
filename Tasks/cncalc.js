@@ -40,7 +40,7 @@ const mood = args.mood || getNodeEnv("CNCALC_MOOD") || CONFIG.mood;
 const saying = args.saying || getNodeEnv("CNCALC_SAYING") || CONFIG.saying;
 
 if ($.isRequest) {
-  getCookie();
+  $.done();
 } else if (!cookie) {
   $.notify(CONFIG.name, "", "未获取 Cookie，请先启用获取 Cookie 脚本并登录访问签到页。");
   $.done();
