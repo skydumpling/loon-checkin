@@ -48,7 +48,7 @@ if ($.isRequest) {
 } else {
   sign()
     .then((message) => $.notify(CONFIG.name, "", message))
-    .catch((error) => $.notify(CONFIG.name, "", `签到失败: ${error.message || error}`))
+    .catch((error) => $.notify(CONFIG.name, "", formatError(error)))
     .finally(() => $.done());
 }
 
@@ -87,7 +87,7 @@ async function sign() {
 
   const form = extractSignForm(signPage.body, signPage.url);
   const fields = prepareSignFields(form.fields, formhash);
-  return submitSignAttempts(buildSubmitAttempts(form, fields, formhash, signPage.url));
+  return submitSignAttempts(buildSubmitAttempts(form, fields, formhash, signPage.url, signPage.body));
 }
 
 async function getSignPage(overrideUrl) {
@@ -158,6 +158,10 @@ async function submitSignAttempts(attempts) {
     const text = stripHtml(response.body);
     const message = cleanMessage(extractMessage(response.body) || text.slice(0, 160));
     if (isAlreadySigned(text)) return message || "今日已经签到。";
+    if (isNotSignedPage(text)) {
+      failures.push(summarizeStatus(text));
+      continue;
+    }
     if (isSuccessMessage(text)) return message || summarizeSuccess(text);
     if (isFailureMessage(text)) {
       failures.push(`${attempt.name}: ${message || "站点拒绝请求"}`);
@@ -169,10 +173,10 @@ async function submitSignAttempts(attempts) {
     }
     return message || "签到请求已提交。";
   }
-  throw new Error(failures.slice(0, 3).join("；") || "所有签到提交方式都失败。");
+  throw new Error(preferUsefulFailures(failures) || "所有签到提交方式都失败。");
 }
 
-function buildSubmitAttempts(form, fields, formhash, referer) {
+function buildSubmitAttempts(form, fields, formhash, referer, html) {
   const attempts = [];
   const submitFields = {
     ...fields,
@@ -182,6 +186,9 @@ function buildSubmitAttempts(form, fields, formhash, referer) {
   };
   const formAction = form.action || "";
   if (formAction) attempts.push({ name: "页面表单", method: form.method || "POST", url: formAction, fields: submitFields, referer });
+  for (const url of extractCandidateUrls(html, referer)) {
+    attempts.push({ name: "页面链接", method: "GET", url, fields: { formhash }, referer });
+  }
   attempts.push(
     { name: "op-qiandao-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&operation=qiandao&inajax=1", fields: submitFields, referer },
     { name: "op-signin-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&operation=signin&inajax=1", fields: submitFields, referer },
@@ -193,6 +200,27 @@ function buildSubmitAttempts(form, fields, formhash, referer) {
     { name: "dc-check-get", method: "GET", url: `https://uiwow.com/plugin.php?id=dc_signin:check&formhash=${encodeURIComponent(formhash)}`, fields: {}, referer },
   );
   return uniqueAttempts(attempts);
+}
+
+function extractCandidateUrls(html, baseUrl) {
+  const urls = [];
+  const patterns = [
+    /\bhref\s*=\s*(["'])(.*?)\1/gi,
+    /\bonclick\s*=\s*(["'])(.*?)\1/gi,
+  ];
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(html))) {
+      const value = decodeHtml(match[2] || "");
+      for (const item of value.match(/(?:https?:\/\/[^'"<>\s]+|plugin\.php\?[^'"<>\s]+|\/plugin\.php\?[^'"<>\s]+)/gi) || []) {
+        if (!/dc_signin|signin|qiandao|签到/i.test(item)) continue;
+        try {
+          urls.push(new URL(item, baseUrl).href);
+        } catch {}
+      }
+    }
+  }
+  return urls;
 }
 
 function uniqueAttempts(attempts) {
@@ -209,6 +237,10 @@ function isFailureMessage(text) {
   return /您需要先登录|尚未登录|请\s*登录|Cookie|非法字符|插件不存在|插件已关闭|未定义操作|请选择|请填写|失败|错误|无效/i.test(text);
 }
 
+function isNotSignedPage(text) {
+  return /您今天还未签到|今天还未签到|今日还未签到|尚未签到|还没有签到/i.test(text);
+}
+
 function isAlreadySigned(text) {
   return /(?:您|你|我).{0,8}(?:今(?:日|天)).{0,8}(?:已经|已).{0,4}签|已经签到过|请明(?:日|天)再来|今日签到已完成/i.test(text);
 }
@@ -218,6 +250,8 @@ function isSuccessMessage(text) {
 }
 
 function summarizeSuccess(text) {
+  const status = summarizeStatus(text);
+  if (status) return status;
   const parts = [];
   const patterns = [
     /签到成功[^。！!；;]*/i,
@@ -230,6 +264,24 @@ function summarizeSuccess(text) {
     if (match && !parts.includes(match[0])) parts.push(match[0]);
   }
   return cleanMessage(parts.join("；") || text.slice(0, 160) || "签到成功。");
+}
+
+function summarizeStatus(text) {
+  const start = text.search(/已连续签到|连续签到/i);
+  if (start === -1) return cleanMessage(text.slice(0, 180));
+  return cleanMessage(text.slice(start, start + 220));
+}
+
+function preferUsefulFailures(failures) {
+  const status = failures.find((item) => /已连续签到|连续签到/.test(item));
+  if (status) return status;
+  return failures.slice(0, 3).join("；");
+}
+
+function formatError(error) {
+  const message = String(error && error.message ? error.message : error || "");
+  if (/^已连续签到|^连续签到/i.test(message)) return message;
+  return `签到失败: ${message}`;
 }
 
 function extractSignForm(html, baseUrl) {
