@@ -4,13 +4,12 @@
  * @version 2.0.0
  ******************************************
 使用说明:
-1. Loon/Surge/QX 中先启用“PCBeta 获取 Cookie”，手机登录并打开 https://i.pcbeta.com/home.php?mod=task
-2. Cookie 获取脚本静默保存登录 Cookie；登录后刷新过任务页即可禁用获取 Cookie 脚本。
+1. Loon/Surge/QX 中先启用订阅里的“签到Cookie获取”，手机登录并打开 https://i.pcbeta.com/home.php?mod=task
+2. Cookie 获取脚本静默保存登录 Cookie；登录后刷新过任务页即可禁用 Cookie 获取脚本。
 3. Node.js 调试可设置环境变量 PCBETA_COOKIE。
 
 Loon:
 [Script]
-http-request ^https:\/\/i\.pcbeta\.com\/home\.php\?mod=task tag=PCBeta获取Cookie, script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/main/Tasks/pcbeta.js
 cron "0 9 * * *" script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/main/Tasks/pcbeta.js, timeout=60, tag=PCBeta签到
 
 [MITM]

@@ -4,14 +4,13 @@
  * @version 2.0.0
  ******************************************
 使用说明:
-1. Loon/Surge/QX 中先启用“cnCalc 获取 Cookie”，手机登录并打开 https://www.cncalc.org/
-2. Cookie 获取脚本静默保存登录 Cookie；登录后刷新过首页即可禁用获取 Cookie 脚本。
+1. Loon/Surge/QX 中先启用订阅里的“签到Cookie获取”，手机登录并打开 https://www.cncalc.org/
+2. Cookie 获取脚本静默保存登录 Cookie；登录后刷新过首页即可禁用 Cookie 获取脚本。
 3. Node.js 调试可设置环境变量 CNCALC_COOKIE。
 4. 默认心情 qdxq=kx，默认输入 todaysay=签到。
 
 Loon:
 [Script]
-http-request ^https:\/\/www\.cncalc\.org\/($|forum\.php|index\.php|member\.php|dsu_paulsign-sign\.html|plugin\.php\?id=dsu_paulsign:sign) tag=cnCalc获取Cookie, script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/main/Tasks/cncalc.js
 cron "0 9 * * *" script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/main/Tasks/cncalc.js, timeout=60, tag=cnCalc签到
 
 [MITM]
