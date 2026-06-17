@@ -42,7 +42,8 @@ const mood = args.mood || getNodeEnv("UIWOW_MOOD") || CONFIG.mood;
 const saying = args.saying || getNodeEnv("UIWOW_SAYING") || CONFIG.saying;
 
 if ($.isRequest) {
-  getCookie();
+  if (args.debug === "1") captureSignRequest();
+  else getCookie();
 } else if (!cookie) {
   $.notify(CONFIG.name, "", "未获取 Cookie，请先启用获取 Cookie 脚本并登录访问 UIWOW。");
   $.done();
@@ -73,6 +74,25 @@ function getCookie() {
   }
 
   $.write(requestCookie, "COOKIE");
+  $.done();
+}
+
+function captureSignRequest() {
+  const requestCookie = getHeader($request.headers, "Cookie");
+  if (requestCookie && CONFIG.cookieCheck.test(requestCookie)) {
+    $.write(requestCookie, "COOKIE");
+  }
+
+  const method = ($request.method || "").toUpperCase();
+  const url = $request.url || "";
+  const body = $request.body || "";
+  const summary = [
+    method || "GET",
+    url.replace(/^https:\/\/(www\.)?uiwow\.com\//i, ""),
+    body ? `body=${body.slice(0, 260)}` : "body=<empty>",
+  ].join("\n");
+  $.write(summary, "LAST_SIGN_REQUEST");
+  $.notify(`${CONFIG.name}抓签到请求`, "", summary);
   $.done();
 }
 
@@ -158,6 +178,10 @@ async function submitSignAttempts(attempts) {
     }
     const text = stripHtml(response.body);
     const message = cleanMessage(extractMessage(response.body) || text.slice(0, 160));
+    if (isNavigationPage(text)) {
+      failures.push(`${attempt.name}: 返回普通页面，未提交签到`);
+      continue;
+    }
     if (isAlreadySigned(text)) return message || "今日已经签到。";
     if (isNotSignedPage(text)) {
       failures.push(summarizeStatus(text));
@@ -238,6 +262,10 @@ function isFailureMessage(text) {
 
 function isNotSignedPage(text) {
   return /您今天还未签到|今天还未签到|今日还未签到|尚未签到|还没有签到/i.test(text);
+}
+
+function isNavigationPage(text) {
+  return /积分\s*:\s*\d+|用户组\s*:|我的\s*\|\s*设置\s*\|\s*消息\s*\|\s*提醒\s*\|\s*退出/i.test(text);
 }
 
 function isAlreadySigned(text) {
