@@ -98,20 +98,7 @@ async function sign() {
     todaysay: saying,
     fastreply: form.fields.fastreply || "0",
   };
-  const actionUrl = form.action || CONFIG.fallbackAction;
-  const method = form.method || "POST";
-  const response = method === "GET"
-    ? await requestText("GET", appendQuery(actionUrl, fields), null, headers(signPage.url))
-    : await requestText("POST", actionUrl, toFormBody(fields), {
-    ...headers(signPage.url),
-    Origin: new URL(CONFIG.baseUrl).origin,
-    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-    "X-Requested-With": "XMLHttpRequest",
-  });
-  assertOk(response, "提交签到失败");
-  assertLoggedIn(response.body);
-
-  return extractMessage(response.body) || stripHtml(response.body).slice(0, 160) || "签到请求已提交。";
+  return submitSignAttempts(buildSubmitAttempts(form, fields, signPage.url));
 }
 
 async function getSignPage() {
@@ -160,6 +147,63 @@ function requestText(method, url, body, requestHeaders) {
     body: response.body || "",
     url,
   }));
+}
+
+async function submitSignAttempts(attempts) {
+  const failures = [];
+  for (const attempt of attempts) {
+    const response = attempt.method === "GET"
+      ? await requestText("GET", appendQuery(attempt.url, attempt.fields), null, headers(attempt.referer))
+      : await requestText("POST", attempt.url, toFormBody(attempt.fields), {
+        ...headers(attempt.referer),
+        Origin: new URL(CONFIG.baseUrl).origin,
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "X-Requested-With": "XMLHttpRequest",
+      });
+    if (response.statusCode < 200 || response.statusCode >= 400) {
+      failures.push(`${attempt.name}: HTTP ${response.statusCode}`);
+      continue;
+    }
+    const text = stripHtml(response.body);
+    const message = extractMessage(response.body) || text.slice(0, 160);
+    if (/今日已签|已经签到|已签到|您今天已经|今日已经/i.test(text)) return "今日已经签到。";
+    if (isFailureMessage(text)) {
+      failures.push(`${attempt.name}: ${message || "站点拒绝请求"}`);
+      continue;
+    }
+    if (/<form\b/i.test(response.body) && !/签到成功|成功|奖励|积分|连续签到/i.test(text)) {
+      failures.push(`${attempt.name}: 返回签到页但未确认成功`);
+      continue;
+    }
+    return message || "签到请求已提交。";
+  }
+  throw new Error(failures.slice(0, 3).join("；") || "所有签到提交方式都失败。");
+}
+
+function buildSubmitAttempts(form, fields, referer) {
+  const attempts = [];
+  const formAction = form.action || "";
+  if (formAction) attempts.push({ name: "页面表单", method: form.method || "POST", url: formAction, fields, referer });
+  attempts.push(
+    { name: "plugin-post", method: "POST", url: "https://www.cncalc.org/plugin.php?id=dsu_paulsign:sign&operation=qiandao&infloat=1&inajax=1", fields, referer },
+    { name: "plugin-get", method: "GET", url: "https://www.cncalc.org/plugin.php?id=dsu_paulsign:sign&operation=qiandao&infloat=1&inajax=1", fields, referer },
+    { name: "rewrite-post", method: "POST", url: "https://www.cncalc.org/dsu_paulsign-sign.html?operation=qiandao&infloat=1&inajax=1", fields, referer },
+  );
+  return uniqueAttempts(attempts);
+}
+
+function uniqueAttempts(attempts) {
+  const seen = new Set();
+  return attempts.filter((attempt) => {
+    const key = `${attempt.method} ${attempt.url}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function isFailureMessage(text) {
+  return /您需要先登录|尚未登录|请\s*登录|Cookie|非法字符|插件不存在|未定义操作|请选择|请填写|失败|错误|无效/i.test(text);
 }
 
 function extractSignForm(html, baseUrl) {
