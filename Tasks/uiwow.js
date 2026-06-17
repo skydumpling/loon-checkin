@@ -24,10 +24,11 @@ const CONFIG = {
   envCookie: "UIWOW_COOKIE",
   baseUrl: "https://uiwow.com/",
   signUrls: [
+    "https://uiwow.com/plugin.php?id=dc_signin:sign",
     "https://uiwow.com/plugin.php?id=dc_signin:dc_signin",
     "https://uiwow.com/",
   ],
-  fallbackAction: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin",
+  fallbackAction: "https://uiwow.com/plugin.php?id=dc_signin:sign",
   mood: "kx",
   saying: "签到",
   cookieCheck: /(?:^|;\s*)[^=]*_auth=/i,
@@ -167,11 +168,7 @@ async function submitSignAttempts(attempts) {
       failures.push(`${attempt.name}: ${message || "站点拒绝请求"}`);
       continue;
     }
-    if (/<form\b/i.test(response.body) && !/签到成功|成功|奖励|积分|喵币|DKP|声望|时沙|连续签到/i.test(text)) {
-      failures.push(`${attempt.name}: 返回签到页但未确认成功`);
-      continue;
-    }
-    return message || "签到请求已提交。";
+    failures.push(`${attempt.name}: ${summarizeStatus(text) || message || "未确认签到成功"}`);
   }
   throw new Error(preferUsefulFailures(failures) || "所有签到提交方式都失败。");
 }
@@ -190,6 +187,8 @@ function buildSubmitAttempts(form, fields, formhash, referer, html) {
     attempts.push({ name: "页面链接", method: "GET", url, fields: { formhash }, referer });
   }
   attempts.push(
+    { name: "mobile-sign-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:sign&inajax=1", fields: submitFields, referer },
+    { name: "mobile-sign-get", method: "GET", url: "https://uiwow.com/plugin.php?id=dc_signin:sign&inajax=1", fields: submitFields, referer },
     { name: "op-qiandao-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&operation=qiandao&inajax=1", fields: submitFields, referer },
     { name: "op-signin-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&operation=signin&inajax=1", fields: submitFields, referer },
     { name: "op-add-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&operation=add&inajax=1", fields: submitFields, referer },
@@ -268,7 +267,7 @@ function summarizeSuccess(text) {
 
 function summarizeStatus(text) {
   const start = text.search(/已连续签到|连续签到/i);
-  if (start === -1) return cleanMessage(text.slice(0, 180));
+  if (start === -1) return "";
   return cleanMessage(text.slice(start, start + 220));
 }
 
