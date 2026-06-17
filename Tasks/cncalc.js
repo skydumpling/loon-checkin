@@ -80,10 +80,6 @@ async function sign() {
   assertOk(signPage, "打开签到页失败");
   assertLoggedIn(signPage.body);
 
-  if (/今日已签|已经签到|已签到|您今天已经|今日已经/i.test(stripHtml(signPage.body))) {
-    return "今日已经签到。";
-  }
-
   const formhash = extractFormHash(signPage.body);
   if (!formhash) {
     throw new Error("未找到 formhash，可能 Cookie 无效或页面结构变化。");
@@ -166,7 +162,8 @@ async function submitSignAttempts(attempts) {
     }
     const text = stripHtml(response.body);
     const message = extractMessage(response.body) || text.slice(0, 160);
-    if (/今日已签|已经签到|已签到|您今天已经|今日已经/i.test(text)) return "今日已经签到。";
+    if (isAlreadySigned(text)) return message || "今日已经签到。";
+    if (isSuccessMessage(text)) return message || summarizeSuccess(text);
     if (isFailureMessage(text)) {
       failures.push(`${attempt.name}: ${message || "站点拒绝请求"}`);
       continue;
@@ -204,6 +201,29 @@ function uniqueAttempts(attempts) {
 
 function isFailureMessage(text) {
   return /您需要先登录|尚未登录|请\s*登录|Cookie|非法字符|插件不存在|未定义操作|请选择|请填写|失败|错误|无效/i.test(text);
+}
+
+function isAlreadySigned(text) {
+  return /(?:您|你|我).{0,8}(?:今(?:日|天)).{0,8}(?:已经|已).{0,4}签|已经签到过|请明(?:日|天)再来|今日签到已完成/i.test(text);
+}
+
+function isSuccessMessage(text) {
+  return /签到成功|成功签到|打卡成功|获得.{0,12}(?:金币|积分|奖励)|奖励.{0,12}(?:金币|积分)|连续签到.{0,8}\d+\s*天/i.test(text);
+}
+
+function summarizeSuccess(text) {
+  const parts = [];
+  const patterns = [
+    /签到成功[^。！!；;]*/i,
+    /获得[^。！!；;]*(?:金币|积分|奖励)[^。！!；;]*/i,
+    /(?:金币|积分|奖励)[^。！!；;]*/i,
+    /连续签到[^。！!；;]*天/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match && !parts.includes(match[0])) parts.push(match[0]);
+  }
+  return parts.join("；") || text.slice(0, 160) || "签到成功。";
 }
 
 function extractSignForm(html, baseUrl) {
