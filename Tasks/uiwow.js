@@ -156,7 +156,7 @@ async function submitSignAttempts(attempts) {
       continue;
     }
     const text = stripHtml(response.body);
-    const message = extractMessage(response.body) || text.slice(0, 160);
+    const message = cleanMessage(extractMessage(response.body) || text.slice(0, 160));
     if (isAlreadySigned(text)) return message || "今日已经签到。";
     if (isSuccessMessage(text)) return message || summarizeSuccess(text);
     if (isFailureMessage(text)) {
@@ -183,10 +183,13 @@ function buildSubmitAttempts(form, fields, formhash, referer) {
   const formAction = form.action || "";
   if (formAction) attempts.push({ name: "页面表单", method: form.method || "POST", url: formAction, fields: submitFields, referer });
   attempts.push(
-    { name: "dc-main-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&action=sign&inajax=1", fields: submitFields, referer },
-    { name: "dc-main-op-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&operation=sign&inajax=1", fields: submitFields, referer },
-    { name: "dc-sign-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:sign&inajax=1", fields: submitFields, referer },
-    { name: "dc-main-get", method: "GET", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&action=sign&inajax=1", fields: submitFields, referer },
+    { name: "op-qiandao-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&operation=qiandao&inajax=1", fields: submitFields, referer },
+    { name: "op-signin-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&operation=signin&inajax=1", fields: submitFields, referer },
+    { name: "op-add-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&operation=add&inajax=1", fields: submitFields, referer },
+    { name: "op-sign-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&operation=sign&inajax=1", fields: submitFields, referer },
+    { name: "ac-qiandao-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&action=qiandao&inajax=1", fields: submitFields, referer },
+    { name: "ac-signin-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&action=signin&inajax=1", fields: submitFields, referer },
+    { name: "ac-sign-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&action=sign&inajax=1", fields: submitFields, referer },
     { name: "dc-check-get", method: "GET", url: `https://uiwow.com/plugin.php?id=dc_signin:check&formhash=${encodeURIComponent(formhash)}`, fields: {}, referer },
   );
   return uniqueAttempts(attempts);
@@ -226,11 +229,11 @@ function summarizeSuccess(text) {
     const match = text.match(pattern);
     if (match && !parts.includes(match[0])) parts.push(match[0]);
   }
-  return parts.join("；") || text.slice(0, 160) || "签到成功。";
+  return cleanMessage(parts.join("；") || text.slice(0, 160) || "签到成功。");
 }
 
 function extractSignForm(html, baseUrl) {
-  const fallback = { action: CONFIG.fallbackAction, method: "POST", fields: {} };
+  const fallback = { action: "", method: "POST", fields: {} };
   const pattern = /<form\b([^>]*)>([\s\S]*?)<\/form>/gi;
   let match;
   while ((match = pattern.exec(html))) {
@@ -326,10 +329,18 @@ function extractMessage(html) {
     html.match(/<p[^>]*>([\s\S]*?)<\/p>/i)?.[1],
   ].filter(Boolean);
   for (const item of candidates) {
-    const message = stripHtml(item);
+    const message = cleanMessage(stripHtml(item));
     if (message) return message;
   }
   return "";
+}
+
+function cleanMessage(message) {
+  return String(message || "")
+    .replace(/\[?\s*点此返回\s*\]?/g, "")
+    .replace(/如果您的浏览器没有自动跳转[^。！!；;]*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function toFormBody(data) {

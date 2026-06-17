@@ -88,11 +88,31 @@ async function sign() {
       const response = await requestText("GET", url.href, null, headers(page.url));
       assertOk(response, `${action.label}失败`);
       assertLoggedIn(response.body);
-      results.push(`${action.label}: ${extractMessage(response.body) || extractTitle(response.body) || "完成"}`);
+      results.push(formatResult(action, response.body));
     }
   }
 
   return results.length ? results.join("\n") : "没有发现可领取任务，可能今天已经完成。";
+}
+
+function formatResult(action, html) {
+  const message = cleanMessage(extractMessage(html) || extractTitle(html) || "完成");
+  const reward = extractReward(message);
+  const prefix = action.label.replace("申请任务", "申请").replace("领取奖励", "领取");
+  return reward ? `${prefix}: ${reward}` : `${prefix}: ${message}`;
+}
+
+function extractReward(message) {
+  const patterns = [
+    /(?:获得|奖励|领取)[^。！!；;]*(?:积分|金币|威望|热心值|PCB|经验|贡献)[^。！!；;]*/i,
+    /(?:积分|金币|威望|热心值|PCB|经验|贡献)\s*[+-]?\d+/i,
+    /任务(?:已完成|完成|申请成功|领取成功)[^。！!；;]*/i,
+  ];
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match) return match[0];
+  }
+  return "";
 }
 
 function extractTaskActions(html, baseUrl) {
@@ -180,14 +200,22 @@ function extractMessage(html) {
     html.match(/<p[^>]*>([\s\S]*?)<\/p>/i)?.[1],
   ].filter(Boolean);
   for (const item of candidates) {
-    const message = stripHtml(item);
+    const message = cleanMessage(stripHtml(item));
     if (message) return message;
   }
   return "";
 }
 
 function extractTitle(html) {
-  return stripHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "");
+  return cleanMessage(stripHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || ""));
+}
+
+function cleanMessage(message) {
+  return String(message || "")
+    .replace(/\[?\s*点此返回\s*\]?/g, "")
+    .replace(/如果您的浏览器没有自动跳转[^。！!；;]*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function stripHtml(value) {
