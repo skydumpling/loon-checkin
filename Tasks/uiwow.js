@@ -1,13 +1,13 @@
 /******************************************
  * @name UIWOW 签到
  * @description UIWOW dc_signin 自动签到，支持 Quantumult X / Surge / Loon / Node.js
- * @version 2.0.0
+ * @version 2.1.0
  ******************************************
 使用说明:
 1. Loon/Surge/QX 中先启用订阅里的“签到Cookie获取”，手机登录并打开 https://uiwow.com/
 2. Cookie 获取脚本静默保存登录 Cookie；登录后刷新过首页即可禁用 Cookie 获取脚本。
 3. Node.js 调试可设置环境变量 UIWOW_COOKIE。
-4. 默认心情 mood=kx，默认输入 saying=签到。
+4. 默认心情 mood=1，默认输入 saying=签到。
 
 Loon:
 [Script]
@@ -23,12 +23,14 @@ const CONFIG = {
   envCookie: "UIWOW_COOKIE",
   baseUrl: "https://uiwow.com/",
   signUrls: [
+    "https://uiwow.com/plugin.php?id=dc_signin:sign&infloat=yes&handlekey=sign&inajax=1&ajaxtarget=fwin_content_sign",
+    "https://uiwow.com/plugin.php?id=dc_signin:sign&inajax=1",
     "https://uiwow.com/plugin.php?id=dc_signin:sign",
     "https://uiwow.com/plugin.php?id=dc_signin:dc_signin",
     "https://uiwow.com/",
   ],
-  fallbackAction: "https://uiwow.com/plugin.php?id=dc_signin:sign",
-  mood: "kx",
+  fallbackAction: "https://uiwow.com/plugin.php?id=dc_signin:sign&inajax=1",
+  mood: "1",
   saying: "签到",
   cookieCheck: /(?:^|;\s*)[^=]*_auth=/i,
 };
@@ -37,7 +39,7 @@ const $ = API(CONFIG.storage);
 const args = parseArguments(typeof $argument === "string" ? $argument : "");
 const storedCookie = $.read("COOKIE");
 const cookie = CONFIG.cookieCheck.test(storedCookie) ? storedCookie : getNodeEnv(CONFIG.envCookie);
-const mood = args.mood || getNodeEnv("UIWOW_MOOD") || CONFIG.mood;
+const mood = normalizeMood(args.mood || getNodeEnv("UIWOW_MOOD") || CONFIG.mood);
 const saying = args.saying || getNodeEnv("UIWOW_SAYING") || CONFIG.saying;
 
 if ($.isRequest) {
@@ -167,7 +169,7 @@ async function submitSignAttempts(attempts) {
       : await requestText("POST", attempt.url, toFormBody(attempt.fields), {
         ...headers(attempt.referer),
         Origin: new URL(CONFIG.baseUrl).origin,
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "Content-Type": "application/x-www-form-urlencoded",
         "X-Requested-With": "XMLHttpRequest",
       });
     if (response.statusCode < 200 || response.statusCode >= 400) {
@@ -209,8 +211,8 @@ function buildSubmitAttempts(form, fields, formhash, referer, html) {
     attempts.push({ name: "页面链接", method: "GET", url, fields: { formhash }, referer });
   }
   attempts.push(
-    { name: "mobile-sign-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:sign&inajax=1", fields: submitFields, referer },
-    { name: "mobile-sign-get", method: "GET", url: "https://uiwow.com/plugin.php?id=dc_signin:sign&inajax=1", fields: submitFields, referer },
+    { name: "popup-submit-post", method: "POST", url: CONFIG.fallbackAction, fields: submitFields, referer },
+    { name: "popup-submit-get", method: "GET", url: CONFIG.fallbackAction, fields: submitFields, referer },
     { name: "op-qiandao-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&operation=qiandao&inajax=1", fields: submitFields, referer },
     { name: "op-signin-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&operation=signin&inajax=1", fields: submitFields, referer },
     { name: "op-add-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&operation=add&inajax=1", fields: submitFields, referer },
@@ -319,7 +321,7 @@ function extractSignForm(html, baseUrl) {
     const actionRaw = getAttribute(attrs, "action");
     const action = actionRaw ? new URL(decodeHtml(actionRaw), baseUrl).href : "";
     const text = `${attrs}\n${body}\n${action}`;
-    if (!/dc_signin|signin|签到|mood|say|content|message/i.test(text)) continue;
+    if (!/dc_signin|signin|签到|mood|emot|emotion|say|content|message/i.test(text)) continue;
     return {
       action: action || fallback.action,
       method: (getAttribute(attrs, "method") || "POST").toUpperCase(),
@@ -340,8 +342,17 @@ function extractFormFields(html) {
     const type = (getAttribute(attrs, "type") || "").toLowerCase();
     if (["button", "image", "reset", "submit"].includes(type)) continue;
     if (type === "checkbox" && !/\bchecked\b/i.test(attrs)) continue;
-    if (type === "radio" && !/\bchecked\b/i.test(attrs) && Object.prototype.hasOwnProperty.call(fields, name)) continue;
+    if (type === "radio" && !/\bchecked\b/i.test(attrs)) continue;
     fields[name] = getAttribute(attrs, "value") || "";
+  }
+
+  const selectPattern = /<select\b([^>]*)>([\s\S]*?)<\/select>/gi;
+  while ((match = selectPattern.exec(html))) {
+    const name = getAttribute(match[1] || "", "name");
+    if (!name) continue;
+    const body = match[2] || "";
+    const selected = body.match(/<option\b([^>]*)\bselected\b[^>]*>/i) || body.match(/<option\b([^>]*)>/i);
+    if (selected) fields[name] = getAttribute(selected[1] || "", "value");
   }
 
   const textareaPattern = /<textarea\b([^>]*)>([\s\S]*?)<\/textarea>/gi;
@@ -354,11 +365,28 @@ function extractFormFields(html) {
 
 function prepareSignFields(fields, formhash) {
   const result = { ...fields, formhash: fields.formhash || formhash };
-  const moodKeys = ["qdxq", "mood", "emotion", "feeling", "type"];
-  const sayingKeys = ["todaysay", "saying", "message", "content", "say", "signmsg"];
-  setFirstExisting(result, moodKeys, mood, "qdxq");
-  setFirstExisting(result, sayingKeys, saying, "todaysay");
+  const moodKeys = ["emotid", "emot", "emotionid", "emotion", "mood", "feeling", "qdxq", "type"];
+  const sayingKeys = ["message", "content", "todaysay", "saying", "say", "signmsg", "words"];
+  setFirstExisting(result, moodKeys, mood, "emotid");
+  setFirstExisting(result, sayingKeys, saying, "message");
   return result;
+}
+
+function normalizeMood(value) {
+  const text = String(value || "").trim().toLowerCase();
+  const map = {
+    kx: "1",
+    happy: "1",
+    ym: "2",
+    sad: "2",
+    wl: "3",
+    bored: "3",
+    nu: "4",
+    angry: "4",
+    shuai: "5",
+    cool: "5",
+  };
+  return map[text] || text || CONFIG.mood;
 }
 
 function setFirstExisting(target, keys, value, fallbackKey) {
