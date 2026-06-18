@@ -1,7 +1,7 @@
 /******************************************
  * @name UIWOW 签到
  * @description UIWOW dc_signin 自动签到，支持 Quantumult X / Surge / Loon / Node.js
- * @version 2.2.0
+ * @version 2.3.0
  ******************************************
 使用说明:
 1. Loon/Surge/QX 中先启用订阅里的“签到Cookie获取”，手机登录并打开 https://uiwow.com/
@@ -182,12 +182,12 @@ async function submitSignAttempts(attempts) {
       failures.push(`${attempt.name}: 返回普通页面，未提交签到`);
       continue;
     }
-    if (isAlreadySigned(text)) return message || "今日已经签到。";
+    if (isAlreadySigned(text)) return summarizeStatus(text) || await getStatusMessage() || message || "今日已经签到。";
     if (isNotSignedPage(text)) {
       failures.push(summarizeStatus(text));
       continue;
     }
-    if (isSuccessMessage(text)) return message || summarizeSuccess(text);
+    if (isSuccessMessage(text)) return summarizeSuccess(text) || await getStatusMessage() || message;
     if (isFailureMessage(text)) {
       failures.push(`${attempt.name}: ${message || "站点拒绝请求"}`);
       continue;
@@ -297,9 +297,41 @@ function summarizeSuccess(text) {
 }
 
 function summarizeStatus(text) {
-  const start = text.search(/已连续签到|连续签到/i);
+  const normalized = cleanMessage(text);
+  const total = findStat(normalized, /(?:您)?累计已签到\s*[:：]\s*(\d+\s*天)/i);
+  const streak = findStat(normalized, /连续签到\s*[:：]\s*(\d+\s*天)/i);
+  const monthTotal = findStat(normalized, /(?:您)?本月已累计签到\s*[:：]\s*(\d+\s*天)/i);
+  const monthStreak = findStat(normalized, /本月连续签到\s*[:：]\s*(\d+\s*天)/i);
+  const reward = findStat(normalized, /上次获得的奖励为\s*[:：]\s*([^。！!；;，,]*?(?:金币|喵币|DKP|声望|时沙|积分|奖励)\s*\d+)/i)
+    || findStat(normalized, /获得的奖励为\s*[:：]\s*([^。！!；;，,]*?(?:金币|喵币|DKP|声望|时沙|积分|奖励)\s*\d+)/i)
+    || findStat(normalized, /(?:金币|喵币|DKP|声望|时沙|积分)\s*\d+/i);
+
+  const lines = [];
+  if (total || streak) lines.push(["累计已签到: " + (total || "-"), "连续签到: " + (streak || "-")].join(" ，"));
+  if (monthTotal || monthStreak) lines.push(["您本月已累计签到: " + (monthTotal || "-"), "本月连续签到: " + (monthStreak || "-")].join(" ，"));
+  if (reward) lines.push("获得的奖励为: " + reward.replace(/^获得的奖励为\s*[:：]\s*/i, ""));
+  if (lines.length) return lines.join("\n\n");
+
+  const start = normalized.search(/累计已签到|已连续签到|连续签到/i);
   if (start === -1) return "";
-  return cleanMessage(text.slice(start, start + 220));
+  return cleanMessage(normalized.slice(start, start + 220));
+}
+
+function findStat(text, pattern) {
+  const match = text.match(pattern);
+  return cleanMessage(match?.[1] || match?.[0] || "");
+}
+
+async function getStatusMessage() {
+  try {
+    const response = await requestText("GET", "https://uiwow.com/plugin.php?id=dc_signin:dc_signin", null, headers(CONFIG.baseUrl));
+    if (response.statusCode >= 200 && response.statusCode < 400) {
+      return summarizeStatus(stripHtml(response.body));
+    }
+  } catch (error) {
+    console.log(`${CONFIG.name} 查询签到统计失败: ${error.message || error}`);
+  }
+  return "";
 }
 
 function preferUsefulFailures(failures) {

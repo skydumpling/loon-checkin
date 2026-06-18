@@ -1,7 +1,7 @@
 /******************************************
  * @name 签到 Cookie 获取
  * @description 合并获取 PCBeta / cnCalc / UIWOW 登录 Cookie，静默保存
- * @version 1.0.0
+ * @version 1.1.0
  ******************************************
 使用说明:
 1. 启用本脚本后，分别登录并打开对应页面：
@@ -61,7 +61,6 @@ function captureCookie() {
   const savedCookie = store.read("COOKIE");
   if (savedCookie !== cookie) {
     store.write(cookie, "COOKIE");
-    $.log(`${site.name} Cookie saved.`);
   }
   $.done();
 }
