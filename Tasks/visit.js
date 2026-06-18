@@ -1,7 +1,7 @@
 /******************************************
  * @name 访问领奖
  * @description 登录后打开页面即可领奖的站点通用访问脚本，支持多账号
- * @version 1.0.0
+ * @version 1.1.0
  ******************************************/
 
 const SITES = {
@@ -38,7 +38,8 @@ if (!inferredSite) {
 } else if (typeof $request !== "undefined") {
   captureCookie(inferredSite, slot);
 } else {
-  visit(inferredSite, slot)
+  randomDelay(args.delay || getNodeEnv("VISIT_DELAY"))
+    .then(() => visit(inferredSite, slot))
     .then((message) => notify(displayName(inferredSite, slot), "", message))
     .catch((error) => notify(displayName(inferredSite, slot), "", `访问失败: ${error.message || error}`))
     .finally(() => done());
@@ -59,8 +60,18 @@ function captureCookie(site, accountSlot) {
   const store = API(storageName(site, accountSlot));
   if (store.read("COOKIE") !== cookie) {
     store.write(cookie, "COOKIE");
+    store.write(String(Date.now()), "LAST_CAPTURE_NOTIFY");
+    notify(displayName(site, accountSlot), "", `Cookie 获取成功\n账号ID: ${accountId(site, accountSlot)}`);
+  } else if (shouldNotifyCapture(store)) {
+    store.write(String(Date.now()), "LAST_CAPTURE_NOTIFY");
+    notify(displayName(site, accountSlot), "", `Cookie 已存在\n账号ID: ${accountId(site, accountSlot)}`);
   }
   done();
+}
+
+function shouldNotifyCapture(store) {
+  const last = Number(store.read("LAST_CAPTURE_NOTIFY") || 0);
+  return !last || Date.now() - last > 5 * 60 * 1000;
 }
 
 async function visit(site, accountSlot) {
@@ -81,9 +92,11 @@ async function visit(site, accountSlot) {
 
   const text = stripHtml(response.body || "");
   const title = extractTitle(response.body || "");
+  const account = accountId(site, accountSlot, text);
+  const prompt = extractPrompt(response.body || "", text);
   const reward = summarizeReward(text);
   const loginHint = looksLoggedOut(text) ? "可能未登录，请重新获取 Cookie。" : "访问完成。";
-  return [loginHint, title && `页面: ${title}`, reward].filter(Boolean).join("\n");
+  return [`账号ID: ${account}`, prompt || loginHint, title && `页面: ${title}`, reward].filter(Boolean).join("\n");
 }
 
 function headers(site, cookie, referer) {
@@ -97,9 +110,21 @@ function headers(site, cookie, referer) {
 }
 
 function summarizeReward(text) {
-  const matches = text.match(/(?:领取|获得|奖励|金币|积分|威望|经验)[^。！!；;\n]{0,40}/g) || [];
+  const matches = text.match(/(?:领取|获得|奖励|金币|积分|威望|经验|成功|已领|已领取)[^。！!；;\n]{0,50}/g) || [];
   const useful = [...new Set(matches.map(cleanMessage).filter((item) => item.length >= 3))].slice(0, 3);
   return useful.length ? useful.join("\n") : "";
+}
+
+function extractPrompt(html, text) {
+  const candidates = [
+    html.match(/<div[^>]+id=["']messagetext["'][^>]*>([\s\S]*?)<\/div>/i)?.[1],
+    html.match(/<div[^>]+class=["'][^"']*(?:alert|notice|message|tips?)[^"']*["'][^>]*>([\s\S]*?)<\/div>/i)?.[1],
+    html.match(/<p[^>]+class=["'][^"']*(?:alert|notice|message|tips?)[^"']*["'][^>]*>([\s\S]*?)<\/p>/i)?.[1],
+  ].map((item) => cleanMessage(stripHtml(item || ""))).filter(Boolean);
+  if (candidates.length) return candidates[0].slice(0, 180);
+
+  const match = text.match(/(?:今日|每天|每日|访问|登录|领取|获得|奖励|金币|积分|威望|经验|成功|失败|已经|已领|已领取)[^。！!；;\n]{0,80}/);
+  return cleanMessage(match?.[0] || "");
 }
 
 function looksLoggedOut(text) {
@@ -114,6 +139,20 @@ function storageName(site, accountSlot) {
 
 function displayName(site, accountSlot) {
   return site.name + (site.storage === "VISIT_JAVBUS" ? ` 账号${accountSlot}` : "");
+}
+
+function accountId(site, accountSlot, text = "") {
+  const explicit = args.account || args.uid || args.name;
+  if (explicit) return explicit;
+  const patterns = [
+    /(?:用户名|用户|账号|會員|会员|UID|User(?:name)?)\s*[:：]?\s*([A-Za-z0-9_\-\u4e00-\u9fa5]{2,32})/i,
+    /欢迎(?:您)?[,，\s]*([A-Za-z0-9_\-\u4e00-\u9fa5]{2,32})/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return match[1];
+  }
+  return site.storage === "VISIT_JAVBUS" ? `账号${accountSlot}` : "默认账号";
 }
 
 function getEnvCookie(site, accountSlot) {
@@ -200,6 +239,27 @@ function parseArguments(argument) {
     else result[decodeURIComponent(item.slice(0, index))] = decodeURIComponent(item.slice(index + 1));
   }
   return result;
+}
+
+function randomDelay(value) {
+  const range = parseDelayRange(value);
+  if (!range.max) return Promise.resolve();
+  const seconds = Math.floor(range.min + Math.random() * (range.max - range.min + 1));
+  console.log(`访问领奖随机延迟 ${seconds} 秒`);
+  return new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+}
+
+function parseDelayRange(value) {
+  const text = String(value || "").trim();
+  if (!text) return { min: 0, max: 0 };
+  const match = text.match(/^(\d+)\s*-\s*(\d+)$/);
+  if (match) {
+    const min = Math.max(0, Number(match[1]) || 0);
+    const max = Math.max(min, Number(match[2]) || 0);
+    return { min, max };
+  }
+  const max = Math.max(0, Number(text) || 0);
+  return { min: 0, max };
 }
 
 function getHost(url) {

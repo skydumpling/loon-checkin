@@ -1,7 +1,7 @@
 /******************************************
  * @name PCBeta 签到
  * @description 远景论坛任务中心自动签到，支持 Quantumult X / Surge / Loon / Node.js
- * @version 2.0.0
+ * @version 2.1.0
  ******************************************
 使用说明:
 1. Loon/Surge/QX 中先启用订阅里的“签到Cookie获取”，手机登录并打开 https://i.pcbeta.com/home.php?mod=task
@@ -25,6 +25,7 @@ const CONFIG = {
 };
 
 const $ = API(CONFIG.storage);
+const args = parseArguments(typeof $argument === "string" ? $argument : "");
 const storedCookie = $.read("COOKIE");
 const cookie = CONFIG.cookieCheck.test(storedCookie) ? storedCookie : getNodeEnv(CONFIG.envCookie);
 
@@ -34,7 +35,8 @@ if ($.isRequest) {
   $.notify(CONFIG.name, "", "未获取 Cookie，请先启用获取 Cookie 脚本并登录访问任务页。");
   $.done();
 } else {
-  sign()
+  randomDelay(args.delay || getNodeEnv("PCBETA_DELAY"))
+    .then(() => sign())
     .then((message) => $.notify(CONFIG.name, "", message))
     .catch((error) => $.notify(CONFIG.name, "", `签到失败: ${error.message || error}`))
     .finally(() => $.done());
@@ -244,6 +246,38 @@ function getHeader(headersObject, name) {
     if (key.toLowerCase() === target) return headersObject[key];
   }
   return "";
+}
+
+function parseArguments(argument) {
+  const result = {};
+  for (const item of String(argument || "").split(/[&\n]/)) {
+    if (!item) continue;
+    const index = item.indexOf("=");
+    if (index === -1) result[decodeURIComponent(item)] = "";
+    else result[decodeURIComponent(item.slice(0, index))] = decodeURIComponent(item.slice(index + 1));
+  }
+  return result;
+}
+
+function randomDelay(value) {
+  const range = parseDelayRange(value);
+  if (!range.max) return Promise.resolve();
+  const seconds = Math.floor(range.min + Math.random() * (range.max - range.min + 1));
+  console.log(`${CONFIG.name} 随机延迟 ${seconds} 秒`);
+  return new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+}
+
+function parseDelayRange(value) {
+  const text = String(value || "").trim();
+  if (!text) return { min: 0, max: 0 };
+  const match = text.match(/^(\d+)\s*-\s*(\d+)$/);
+  if (match) {
+    const min = Math.max(0, Number(match[1]) || 0);
+    const max = Math.max(min, Number(match[2]) || 0);
+    return { min, max };
+  }
+  const max = Math.max(0, Number(text) || 0);
+  return { min: 0, max };
 }
 
 function getNodeEnv(key) {

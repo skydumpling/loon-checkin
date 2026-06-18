@@ -1,33 +1,36 @@
 /******************************************
- * @name cnCalc 签到
- * @description cnCalc dsu_paulsign 自动签到，支持 Quantumult X / Surge / Loon / Node.js
- * @version 2.1.0
+ * @name UIWOW 签到
+ * @description UIWOW dc_signin 自动签到，支持 Quantumult X / Surge / Loon / Node.js
+ * @version 2.4.0
  ******************************************
 使用说明:
-1. Loon/Surge/QX 中先启用订阅里的“签到Cookie获取”，手机登录并打开 https://www.cncalc.org/
+1. Loon/Surge/QX 中先启用订阅里的“签到Cookie获取”，手机登录并打开 https://uiwow.com/
 2. Cookie 获取脚本静默保存登录 Cookie；登录后刷新过首页即可禁用 Cookie 获取脚本。
-3. Node.js 调试可设置环境变量 CNCALC_COOKIE。
-4. 默认心情 qdxq=kx，默认输入 todaysay=签到。
+3. Node.js 调试可设置环境变量 UIWOW_COOKIE。
+4. 默认心情 mood=1，默认输入 saying=签到。
 
 Loon:
 [Script]
-cron "0 9 * * *" script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/main/Tasks/cncalc.js, timeout=60, tag=cnCalc签到
+cron "0 9 * * *" script-path=https://raw.githubusercontent.com/skydumpling/loon-checkin/main/Tasks/uiwow-sign.js, timeout=900, tag=UIWOW签到, argument="mood=1&saying=%E7%AD%BE%E5%88%B0&delay=0-600"
 
 [MITM]
-hostname = %APPEND% www.cncalc.org
+hostname = %APPEND% uiwow.com, www.uiwow.com
 ******************************************/
 
 const CONFIG = {
-  name: "cnCalc",
-  storage: "CNCALC_CHECKIN",
-  envCookie: "CNCALC_COOKIE",
-  baseUrl: "https://www.cncalc.org/",
+  name: "UIWOW",
+  storage: "UIWOW_CHECKIN",
+  envCookie: "UIWOW_COOKIE",
+  baseUrl: "https://uiwow.com/",
   signUrls: [
-    "https://www.cncalc.org/dsu_paulsign-sign.html",
-    "https://www.cncalc.org/plugin.php?id=dsu_paulsign:sign",
+    "https://uiwow.com/plugin.php?id=dc_signin:sign&infloat=yes&handlekey=sign&inajax=1&ajaxtarget=fwin_content_sign",
+    "https://uiwow.com/plugin.php?id=dc_signin:sign&inajax=1",
+    "https://uiwow.com/plugin.php?id=dc_signin:sign",
+    "https://uiwow.com/plugin.php?id=dc_signin:dc_signin",
+    "https://uiwow.com/",
   ],
-  fallbackAction: "https://www.cncalc.org/plugin.php?id=dsu_paulsign:sign&operation=qiandao",
-  mood: "kx",
+  fallbackAction: "https://uiwow.com/plugin.php?id=dc_signin:sign&inajax=1",
+  mood: "1",
   saying: "签到",
   cookieCheck: /(?:^|;\s*)[^=]*_auth=/i,
 };
@@ -36,19 +39,19 @@ const $ = API(CONFIG.storage);
 const args = parseArguments(typeof $argument === "string" ? $argument : "");
 const storedCookie = $.read("COOKIE");
 const cookie = CONFIG.cookieCheck.test(storedCookie) ? storedCookie : getNodeEnv(CONFIG.envCookie);
-const mood = args.mood || getNodeEnv("CNCALC_MOOD") || CONFIG.mood;
-const saying = args.saying || getNodeEnv("CNCALC_SAYING") || CONFIG.saying;
+const mood = normalizeMood(args.mood || getNodeEnv("UIWOW_MOOD") || CONFIG.mood);
+const saying = args.saying || getNodeEnv("UIWOW_SAYING") || CONFIG.saying;
 
 if ($.isRequest) {
   $.done();
 } else if (!cookie) {
-  $.notify(CONFIG.name, "", "未获取 Cookie，请先启用获取 Cookie 脚本并登录访问签到页。");
+  $.notify(CONFIG.name, "", "未获取 Cookie，请先启用获取 Cookie 脚本并登录访问 UIWOW。");
   $.done();
 } else {
-  randomDelay(args.delay || getNodeEnv("CNCALC_DELAY"))
+  randomDelay(args.delay || getNodeEnv("UIWOW_DELAY"))
     .then(() => sign())
     .then((message) => $.notify(CONFIG.name, "", message))
-    .catch((error) => $.notify(CONFIG.name, "", `签到失败: ${error.message || error}`))
+    .catch((error) => $.notify(CONFIG.name, "", formatError(error)))
     .finally(() => $.done());
 }
 
@@ -75,39 +78,53 @@ function getCookie() {
   $.done();
 }
 
+function captureSignRequest() {
+  const requestCookie = getHeader($request.headers, "Cookie");
+  if (requestCookie && CONFIG.cookieCheck.test(requestCookie)) {
+    $.write(requestCookie, "COOKIE");
+  }
+
+  const method = ($request.method || "").toUpperCase();
+  const url = $request.url || "";
+  const body = $request.body || "";
+  const summary = [
+    method || "GET",
+    url.replace(/^https:\/\/(www\.)?uiwow\.com\//i, ""),
+    body ? `body=${body.slice(0, 260)}` : "body=<empty>",
+  ].join("\n");
+  $.write(summary, "LAST_SIGN_REQUEST");
+  $.notify(`${CONFIG.name}抓签到请求`, "", summary);
+  $.done();
+}
+
 async function sign() {
-  const signPage = await getSignPage();
+  const signPage = await getSignPage(args.signUrl || getNodeEnv("UIWOW_SIGN_URL"));
   assertOk(signPage, "打开签到页失败");
   assertLoggedIn(signPage.body);
 
   const formhash = extractFormHash(signPage.body);
   if (!formhash) {
-    throw new Error("未找到 formhash，可能 Cookie 无效或页面结构变化。");
+    throw new Error("未找到 formhash，可能 Cookie 无效、页面结构变化，或需要设置 signUrl 参数。");
   }
 
   const form = extractSignForm(signPage.body, signPage.url);
-  const fields = {
-    ...form.fields,
-    formhash: form.fields.formhash || formhash,
-    qdxq: mood,
-    qdmode: form.fields.qdmode || "1",
-    todaysay: saying,
-    fastreply: form.fields.fastreply || "0",
-  };
-  return submitSignAttempts(buildSubmitAttempts(form, fields, signPage.url));
+  const fields = prepareSignFields(form.fields, formhash);
+  return submitSignAttempts(buildSubmitAttempts(form, fields, formhash, signPage.url, signPage.body));
 }
 
-async function getSignPage() {
+async function getSignPage(overrideUrl) {
+  const urls = overrideUrl ? [overrideUrl] : CONFIG.signUrls;
   let lastError;
-  for (const url of CONFIG.signUrls) {
+  for (const signUrl of urls) {
     try {
-      const response = await requestText("GET", url, null, headers(CONFIG.baseUrl));
+      const response = await requestText("GET", signUrl, null, headers(CONFIG.baseUrl));
       if (response.statusCode >= 200 && response.statusCode < 400) {
         return response;
       }
       lastError = new Error(`HTTP ${response.statusCode}`);
     } catch (error) {
       lastError = error;
+      console.log(`${CONFIG.name} 探测 ${signUrl} 失败: ${error.message || error}`);
     }
   }
   throw lastError || new Error("无法打开签到页。");
@@ -116,7 +133,7 @@ async function getSignPage() {
 function headers(referer) {
   return {
     Cookie: cookie,
-    Referer: referer || CONFIG.signUrl,
+    Referer: referer || CONFIG.baseUrl,
     "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
     Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "zh-CN,zh-Hans;q=0.9,en;q=0.8",
@@ -153,7 +170,7 @@ async function submitSignAttempts(attempts) {
       : await requestText("POST", attempt.url, toFormBody(attempt.fields), {
         ...headers(attempt.referer),
         Origin: new URL(CONFIG.baseUrl).origin,
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "Content-Type": "application/x-www-form-urlencoded",
         "X-Requested-With": "XMLHttpRequest",
       });
     if (response.statusCode < 200 || response.statusCode >= 400) {
@@ -162,31 +179,75 @@ async function submitSignAttempts(attempts) {
     }
     const text = stripHtml(response.body);
     const message = cleanMessage(extractMessage(response.body) || text.slice(0, 160));
-    if (isAlreadySigned(text)) return message || "今日已经签到。";
-    if (isSuccessMessage(text)) return message || summarizeSuccess(text);
+    if (isNavigationPage(text)) {
+      failures.push(`${attempt.name}: 返回普通页面，未提交签到`);
+      continue;
+    }
+    if (isAlreadySigned(text)) return summarizeStatus(text) || await getStatusMessage() || message || "今日已经签到。";
+    if (isNotSignedPage(text)) {
+      failures.push(summarizeStatus(text));
+      continue;
+    }
+    if (isSuccessMessage(text)) return summarizeSuccess(text) || await getStatusMessage() || message;
     if (isFailureMessage(text)) {
       failures.push(`${attempt.name}: ${message || "站点拒绝请求"}`);
       continue;
     }
-    if (/<form\b/i.test(response.body) && !/签到成功|成功|奖励|积分|连续签到/i.test(text)) {
-      failures.push(`${attempt.name}: 返回签到页但未确认成功`);
-      continue;
-    }
-    return message || "签到请求已提交。";
+    failures.push(`${attempt.name}: ${summarizeStatus(text) || message || "未确认签到成功"}`);
   }
-  throw new Error(failures.slice(0, 3).join("；") || "所有签到提交方式都失败。");
+  throw new Error(preferUsefulFailures(failures) || "所有签到提交方式都失败。");
 }
 
-function buildSubmitAttempts(form, fields, referer) {
+function buildSubmitAttempts(form, fields, formhash, referer, html) {
   const attempts = [];
+  const submitFields = {
+    ...fields,
+    formhash,
+    signsubmit: fields.signsubmit || "yes",
+    submit: fields.submit || "1",
+  };
   const formAction = form.action || "";
-  if (formAction) attempts.push({ name: "页面表单", method: form.method || "POST", url: formAction, fields, referer });
+  if (formAction) {
+    attempts.push({ name: "页面表单Ajax", method: form.method || "POST", url: addInAjax(formAction), fields: submitFields, referer });
+    attempts.push({ name: "页面表单", method: form.method || "POST", url: formAction, fields: submitFields, referer });
+  }
+  for (const url of extractCandidateUrls(html, referer)) {
+    attempts.push({ name: "页面链接", method: "GET", url, fields: { formhash }, referer });
+  }
   attempts.push(
-    { name: "plugin-post", method: "POST", url: "https://www.cncalc.org/plugin.php?id=dsu_paulsign:sign&operation=qiandao&infloat=1&inajax=1", fields, referer },
-    { name: "plugin-get", method: "GET", url: "https://www.cncalc.org/plugin.php?id=dsu_paulsign:sign&operation=qiandao&infloat=1&inajax=1", fields, referer },
-    { name: "rewrite-post", method: "POST", url: "https://www.cncalc.org/dsu_paulsign-sign.html?operation=qiandao&infloat=1&inajax=1", fields, referer },
+    { name: "popup-submit-post", method: "POST", url: CONFIG.fallbackAction, fields: submitFields, referer },
+    { name: "popup-submit-get", method: "GET", url: CONFIG.fallbackAction, fields: submitFields, referer },
+    { name: "op-qiandao-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&operation=qiandao&inajax=1", fields: submitFields, referer },
+    { name: "op-signin-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&operation=signin&inajax=1", fields: submitFields, referer },
+    { name: "op-add-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&operation=add&inajax=1", fields: submitFields, referer },
+    { name: "op-sign-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&operation=sign&inajax=1", fields: submitFields, referer },
+    { name: "ac-qiandao-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&action=qiandao&inajax=1", fields: submitFields, referer },
+    { name: "ac-signin-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&action=signin&inajax=1", fields: submitFields, referer },
+    { name: "ac-sign-post", method: "POST", url: "https://uiwow.com/plugin.php?id=dc_signin:dc_signin&action=sign&inajax=1", fields: submitFields, referer },
+    { name: "dc-check-get", method: "GET", url: `https://uiwow.com/plugin.php?id=dc_signin:check&formhash=${encodeURIComponent(formhash)}`, fields: {}, referer },
   );
   return uniqueAttempts(attempts);
+}
+
+function extractCandidateUrls(html, baseUrl) {
+  const urls = [];
+  const patterns = [
+    /\bhref\s*=\s*(["'])(.*?)\1/gi,
+    /\bonclick\s*=\s*(["'])(.*?)\1/gi,
+  ];
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(html))) {
+      const value = decodeHtml(match[2] || "");
+      for (const item of value.match(/(?:https?:\/\/[^'"<>\s]+|plugin\.php\?[^'"<>\s]+|\/plugin\.php\?[^'"<>\s]+)/gi) || []) {
+        if (!/dc_signin|signin|qiandao|签到/i.test(item)) continue;
+        try {
+          urls.push(new URL(item, baseUrl).href);
+        } catch {}
+      }
+    }
+  }
+  return urls;
 }
 
 function uniqueAttempts(attempts) {
@@ -200,7 +261,15 @@ function uniqueAttempts(attempts) {
 }
 
 function isFailureMessage(text) {
-  return /您需要先登录|尚未登录|请\s*登录|Cookie|非法字符|插件不存在|未定义操作|请选择|请填写|失败|错误|无效/i.test(text);
+  return /您需要先登录|尚未登录|请\s*登录|Cookie|非法字符|插件不存在|插件已关闭|未定义操作|请选择|请填写|失败|错误|无效/i.test(text);
+}
+
+function isNotSignedPage(text) {
+  return /您今天还未签到|今天还未签到|今日还未签到|尚未签到|还没有签到/i.test(text);
+}
+
+function isNavigationPage(text) {
+  return /积分\s*:\s*\d+|用户组\s*:|我的\s*\|\s*设置\s*\|\s*消息\s*\|\s*提醒\s*\|\s*退出/i.test(text);
 }
 
 function isAlreadySigned(text) {
@@ -208,15 +277,17 @@ function isAlreadySigned(text) {
 }
 
 function isSuccessMessage(text) {
-  return /签到成功|成功签到|打卡成功|获得.{0,12}(?:金币|积分|奖励)|奖励.{0,12}(?:金币|积分)|连续签到.{0,8}\d+\s*天/i.test(text);
+  return /签到成功|成功签到|打卡成功|获得.{0,12}(?:喵币|DKP|金币|声望|时沙|积分|奖励)|奖励.{0,12}(?:喵币|DKP|金币|声望|时沙|积分)|连续签到.{0,8}\d+\s*天/i.test(text);
 }
 
 function summarizeSuccess(text) {
+  const status = summarizeStatus(text);
+  if (status) return status;
   const parts = [];
   const patterns = [
     /签到成功[^。！!；;]*/i,
-    /获得[^。！!；;]*(?:金币|积分|奖励)[^。！!；;]*/i,
-    /(?:金币|积分|奖励)[^。！!；;]*/i,
+    /获得[^。！!；;]*(?:喵币|DKP|金币|声望|时沙|积分|奖励)[^。！!；;]*/i,
+    /(?:喵币|DKP|金币|声望|时沙|积分|奖励)[^。！!；;]*/i,
     /连续签到[^。！!；;]*天/i,
   ];
   for (const pattern of patterns) {
@@ -226,8 +297,58 @@ function summarizeSuccess(text) {
   return cleanMessage(parts.join("；") || text.slice(0, 160) || "签到成功。");
 }
 
+function summarizeStatus(text) {
+  const normalized = cleanMessage(text);
+  const total = findStat(normalized, /(?:您)?累计已签到\s*[:：]\s*(\d+\s*天)/i);
+  const streak = findStat(normalized, /连续签到\s*[:：]\s*(\d+\s*天)/i);
+  const monthTotal = findStat(normalized, /(?:您)?本月已累计签到\s*[:：]\s*(\d+\s*天)/i);
+  const monthStreak = findStat(normalized, /本月连续签到\s*[:：]\s*(\d+\s*天)/i);
+  const reward = findStat(normalized, /上次获得的奖励为\s*[:：]\s*([^。！!；;，,]*?(?:金币|喵币|DKP|声望|时沙|积分|奖励)\s*\d+)/i)
+    || findStat(normalized, /获得的奖励为\s*[:：]\s*([^。！!；;，,]*?(?:金币|喵币|DKP|声望|时沙|积分|奖励)\s*\d+)/i)
+    || findStat(normalized, /(?:金币|喵币|DKP|声望|时沙|积分)\s*\d+/i);
+
+  const lines = [];
+  if (total || streak) lines.push(["累计已签到: " + (total || "-"), "连续签到: " + (streak || "-")].join(" ，"));
+  if (monthTotal || monthStreak) lines.push(["您本月已累计签到: " + (monthTotal || "-"), "本月连续签到: " + (monthStreak || "-")].join(" ，"));
+  if (reward) lines.push("获得的奖励为: " + reward.replace(/^获得的奖励为\s*[:：]\s*/i, ""));
+  if (lines.length) return lines.join("\n\n");
+
+  const start = normalized.search(/累计已签到|已连续签到|连续签到/i);
+  if (start === -1) return "";
+  return cleanMessage(normalized.slice(start, start + 220));
+}
+
+function findStat(text, pattern) {
+  const match = text.match(pattern);
+  return cleanMessage(match?.[1] || match?.[0] || "");
+}
+
+async function getStatusMessage() {
+  try {
+    const response = await requestText("GET", "https://uiwow.com/plugin.php?id=dc_signin:dc_signin", null, headers(CONFIG.baseUrl));
+    if (response.statusCode >= 200 && response.statusCode < 400) {
+      return summarizeStatus(stripHtml(response.body));
+    }
+  } catch (error) {
+    console.log(`${CONFIG.name} 查询签到统计失败: ${error.message || error}`);
+  }
+  return "";
+}
+
+function preferUsefulFailures(failures) {
+  const status = failures.find((item) => /已连续签到|连续签到/.test(item));
+  if (status) return status;
+  return failures.slice(0, 3).join("；");
+}
+
+function formatError(error) {
+  const message = String(error && error.message ? error.message : error || "");
+  if (/^已连续签到|^连续签到/i.test(message)) return message;
+  return `签到失败: ${message}`;
+}
+
 function extractSignForm(html, baseUrl) {
-  const fallback = { action: CONFIG.fallbackAction, method: "POST", fields: {} };
+  const fallback = { action: "", method: "POST", fields: {} };
   const pattern = /<form\b([^>]*)>([\s\S]*?)<\/form>/gi;
   let match;
   while ((match = pattern.exec(html))) {
@@ -236,7 +357,7 @@ function extractSignForm(html, baseUrl) {
     const actionRaw = getAttribute(attrs, "action");
     const action = actionRaw ? new URL(decodeHtml(actionRaw), baseUrl).href : "";
     const text = `${attrs}\n${body}\n${action}`;
-    if (!/dsu_paulsign|qiandao|qdxq|todaysay/i.test(text)) continue;
+    if (!/dc_signin|signin|签到|mood|emot|emotion|say|content|message/i.test(text)) continue;
     return {
       action: action || fallback.action,
       method: (getAttribute(attrs, "method") || "POST").toUpperCase(),
@@ -257,8 +378,17 @@ function extractFormFields(html) {
     const type = (getAttribute(attrs, "type") || "").toLowerCase();
     if (["button", "image", "reset", "submit"].includes(type)) continue;
     if (type === "checkbox" && !/\bchecked\b/i.test(attrs)) continue;
-    if (type === "radio" && !/\bchecked\b/i.test(attrs) && Object.prototype.hasOwnProperty.call(fields, name)) continue;
+    if (type === "radio" && !/\bchecked\b/i.test(attrs)) continue;
     fields[name] = getAttribute(attrs, "value") || "";
+  }
+
+  const selectPattern = /<select\b([^>]*)>([\s\S]*?)<\/select>/gi;
+  while ((match = selectPattern.exec(html))) {
+    const name = getAttribute(match[1] || "", "name");
+    if (!name) continue;
+    const body = match[2] || "";
+    const selected = body.match(/<option\b([^>]*)\bselected\b[^>]*>/i) || body.match(/<option\b([^>]*)>/i);
+    if (selected) fields[name] = getAttribute(selected[1] || "", "value");
   }
 
   const textareaPattern = /<textarea\b([^>]*)>([\s\S]*?)<\/textarea>/gi;
@@ -267,6 +397,48 @@ function extractFormFields(html) {
     if (name) fields[name] = stripHtml(match[2] || "");
   }
   return fields;
+}
+
+function prepareSignFields(fields, formhash) {
+  const result = { ...fields, formhash: fields.formhash || formhash };
+  const moodKeys = ["emotid", "emot", "emotionid", "emotion", "mood", "feeling", "qdxq", "type"];
+  const sayingKeys = ["content", "message", "todaysay", "saying", "say", "signmsg", "words"];
+  setFirstExisting(result, moodKeys, mood, "emotid");
+  setFirstExisting(result, sayingKeys, saying, "content");
+  return result;
+}
+
+function addInAjax(url) {
+  const target = new URL(url, CONFIG.baseUrl);
+  target.searchParams.set("inajax", "1");
+  return target.href;
+}
+
+function normalizeMood(value) {
+  const text = String(value || "").trim().toLowerCase();
+  const map = {
+    kx: "1",
+    happy: "1",
+    ym: "2",
+    sad: "2",
+    wl: "3",
+    bored: "3",
+    nu: "4",
+    angry: "4",
+    shuai: "5",
+    cool: "5",
+  };
+  return map[text] || text || CONFIG.mood;
+}
+
+function setFirstExisting(target, keys, value, fallbackKey) {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(target, key)) {
+      target[key] = value;
+      return;
+    }
+  }
+  target[fallbackKey] = value;
 }
 
 function getAttribute(attrs, name) {
