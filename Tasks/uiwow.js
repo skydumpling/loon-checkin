@@ -1,7 +1,7 @@
 /******************************************
  * @name UIWOW 签到
  * @description UIWOW dc_signin 自动签到，支持 Quantumult X / Surge / Loon / Node.js
- * @version 2.1.0
+ * @version 2.2.0
  ******************************************
 使用说明:
 1. Loon/Surge/QX 中先启用订阅里的“签到Cookie获取”，手机登录并打开 https://uiwow.com/
@@ -206,7 +206,10 @@ function buildSubmitAttempts(form, fields, formhash, referer, html) {
     submit: fields.submit || "1",
   };
   const formAction = form.action || "";
-  if (formAction) attempts.push({ name: "页面表单", method: form.method || "POST", url: formAction, fields: submitFields, referer });
+  if (formAction) {
+    attempts.push({ name: "页面表单Ajax", method: form.method || "POST", url: addInAjax(formAction), fields: submitFields, referer });
+    attempts.push({ name: "页面表单", method: form.method || "POST", url: formAction, fields: submitFields, referer });
+  }
   for (const url of extractCandidateUrls(html, referer)) {
     attempts.push({ name: "页面链接", method: "GET", url, fields: { formhash }, referer });
   }
@@ -366,10 +369,16 @@ function extractFormFields(html) {
 function prepareSignFields(fields, formhash) {
   const result = { ...fields, formhash: fields.formhash || formhash };
   const moodKeys = ["emotid", "emot", "emotionid", "emotion", "mood", "feeling", "qdxq", "type"];
-  const sayingKeys = ["message", "content", "todaysay", "saying", "say", "signmsg", "words"];
+  const sayingKeys = ["content", "message", "todaysay", "saying", "say", "signmsg", "words"];
   setFirstExisting(result, moodKeys, mood, "emotid");
-  setFirstExisting(result, sayingKeys, saying, "message");
+  setFirstExisting(result, sayingKeys, saying, "content");
   return result;
+}
+
+function addInAjax(url) {
+  const target = new URL(url, CONFIG.baseUrl);
+  target.searchParams.set("inajax", "1");
+  return target.href;
 }
 
 function normalizeMood(value) {
