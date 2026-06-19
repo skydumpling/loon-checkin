@@ -17,7 +17,7 @@
       "url": "https://uiwow.com/",
       "mood": "1",
       "saying": "签到",
-      "delaySeconds": [0, 600]
+      "delaySeconds": [0, 0]
     },
     {
       "id": "mjtd",
@@ -27,7 +27,7 @@
       "profile": "mjtd",
       "url": "https://www.mjtd.com/",
       "accountId": "mjtd",
-      "delaySeconds": [0, 600]
+      "delaySeconds": [0, 0]
     },
     {
       "id": "iopq",
@@ -37,7 +37,7 @@
       "profile": "iopq",
       "url": "https://www.iopq.net/forum.php?gid=112",
       "accountId": "iopq",
-      "delaySeconds": [0, 600]
+      "delaySeconds": [0, 0]
     },
     {
       "id": "javbus1",
@@ -47,7 +47,7 @@
       "profile": "javbus-1",
       "url": "https://www.javbus.com/forum/",
       "accountId": "javbus1",
-      "delaySeconds": [0, 600]
+      "delaySeconds": [0, 0]
     },
     {
       "id": "javbus2",
@@ -57,7 +57,7 @@
       "profile": "javbus-2",
       "url": "https://www.javbus.com/forum/",
       "accountId": "javbus2",
-      "delaySeconds": [0, 600]
+      "delaySeconds": [0, 0]
     },
     {
       "id": "javbus3",
@@ -67,7 +67,7 @@
       "profile": "javbus-3",
       "url": "https://www.javbus.com/forum/",
       "accountId": "javbus3",
-      "delaySeconds": [0, 600]
+      "delaySeconds": [0, 0]
     }
   ]
 }

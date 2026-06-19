@@ -30,7 +30,7 @@ https://raw.githubusercontent.com/skydumpling/loon-checkin/main/loon/checkin.con
 
 访问领奖脚本获取 Cookie 时会发送一条确认通知，通知中包含 `账号ID`；每日访问时也会返回 `账号ID`、页面提示或访问完成状态。JavBus 三账号默认账号 ID 分别是 `javbus1`、`javbus2`、`javbus3`。
 
-日常 cron 脚本带有 `delay=0-600` 参数，表示 Loon 触发后随机延迟 0 到 600 秒再访问站点，避免每天固定到同一秒请求。需要调整范围时，修改订阅里对应 cron 的 `delay=` 参数即可。
+日常 cron 脚本按订阅里的固定时间运行，不再启用随机延迟。
 
 当天已经签到时，可以手动运行对应签到脚本验证 Cookie 和“已签到/已完成”判断；真正的首次签到成功只能等第二天未签到状态再验证。
 

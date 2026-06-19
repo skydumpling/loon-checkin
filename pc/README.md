@@ -63,4 +63,4 @@ powershell -ExecutionPolicy Bypass -File .\install-task.ps1
 powershell -ExecutionPolicy Bypass -File .\install-task.ps1 -At "08:40"
 ```
 
-任务内部还有 `delaySeconds` 随机延迟，默认每个站点延迟 0 到 600 秒。
+默认不启用随机延迟；`pc/config.json` 中各任务的 `delaySeconds` 为 `[0, 0]`。
