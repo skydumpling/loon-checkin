@@ -1,0 +1,73 @@
+{
+  "browser": {
+    "channel": "msedge",
+    "headless": true,
+    "slowMo": 0
+  },
+  "notify": {
+    "barkUrl": ""
+  },
+  "tasks": [
+    {
+      "id": "uiwow",
+      "name": "UIWOW",
+      "type": "uiwow-sign",
+      "enabled": true,
+      "profile": "uiwow",
+      "url": "https://uiwow.com/",
+      "mood": "1",
+      "saying": "签到",
+      "delaySeconds": [0, 600]
+    },
+    {
+      "id": "mjtd",
+      "name": "MJTD",
+      "type": "visit",
+      "enabled": true,
+      "profile": "mjtd",
+      "url": "https://www.mjtd.com/",
+      "accountId": "mjtd",
+      "delaySeconds": [0, 600]
+    },
+    {
+      "id": "iopq",
+      "name": "IOPQ",
+      "type": "visit",
+      "enabled": true,
+      "profile": "iopq",
+      "url": "https://www.iopq.net/forum.php?gid=112",
+      "accountId": "iopq",
+      "delaySeconds": [0, 600]
+    },
+    {
+      "id": "javbus1",
+      "name": "JavBus 账号1",
+      "type": "visit",
+      "enabled": true,
+      "profile": "javbus-1",
+      "url": "https://www.javbus.com/forum/",
+      "accountId": "javbus1",
+      "delaySeconds": [0, 600]
+    },
+    {
+      "id": "javbus2",
+      "name": "JavBus 账号2",
+      "type": "visit",
+      "enabled": true,
+      "profile": "javbus-2",
+      "url": "https://www.javbus.com/forum/",
+      "accountId": "javbus2",
+      "delaySeconds": [0, 600]
+    },
+    {
+      "id": "javbus3",
+      "name": "JavBus 账号3",
+      "type": "visit",
+      "enabled": true,
+      "profile": "javbus-3",
+      "url": "https://www.javbus.com/forum/",
+      "accountId": "javbus3",
+      "delaySeconds": [0, 600]
+    }
+  ]
+}

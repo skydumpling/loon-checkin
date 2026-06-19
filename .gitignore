@@ -1,0 +1,5 @@
+edge-net-export-log.json
+pc/node_modules/
+pc/profiles/
+pc/logs/
+pc/.env

@@ -1,0 +1,14 @@
+{
+  "name": "loon-checkin-pc",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "run": "node run.mjs run",
+    "login": "node run.mjs login",
+    "list": "node run.mjs list"
+  },
+  "dependencies": {
+    "playwright": "^1.56.0"
+  }
+}
